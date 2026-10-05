@@ -13,14 +13,27 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - ✅ UK tailoring (°C, mph, UK cities first, British copy)
 - ✅ Verified against live Open-Meteo data, with retries for outages and rate limits
 
-## Phase 1: Fix the core game ⏭
+## Phase 1: Fix the core game 🔨
 
 **Problem:** copying the forecast is the best strategy. The forecast is right most days, so copying it scores well. The +10 "beat the forecast" bonus doesn't pay enough to outweigh the extra misses. If everyone copies, everyone scores the same, and there's nothing to talk about. See "Why the game needs to change" below.
 
 - [ ] Set lines *at* the forecast, so the forecast itself is a coin flip on every question ("Will Manchester top 17.5°C?" when the forecast says 17.5°C)
 - [ ] Add one "nearest guess" question per day (e.g. tomorrow's high), scored by how close you get
 - [ ] Rebalance scoring so the leaderboard actually spreads out
-- [ ] Simulate a month of real UK weather with "copy the forecast" vs "random" vs "local knowledge" players and check copying no longer wins
+- [x] Simulator (`npm run simulate`): leagues of copiers, random guessers, contrarians and players with a small local edge, over 2,000 simulated months
+- [ ] Rerun the simulator on real UK forecasts vs outcomes (`npm run simulate -- --real`), blocked today by the sandbox's shared Open-Meteo quota
+
+**Simulator findings (synthetic UK autumn weather):**
+
+| | Current design | Lines on the forecast (3 calls) | Lines on the forecast + nearest guess |
+|---|---|---|---|
+| Copier vs random guesser, points a day | 23.7 vs 19.0 | 14.9 vs 14.5 | 26.8 vs 21.1 |
+| Days where the top score is shared | 71% | 63% | 13% |
+
+- Confirmed: today, copying the forecast is worth about 25% more than guessing, and everyone who copies gets the same score, so most days end in a tie at the top.
+- Putting the line on the forecast removes copying's advantage on the three calls: copying is no better than guessing.
+- The nearest guess is what breaks the ties. It brings back a small edge for copying (the forecast is a sensible guess) but you only win the day by getting closer than everyone else.
+- In every design, anyone who genuinely knows better than the forecast wins the month. With lines on the forecast, everyone else is on an equal footing day to day.
 
 ## Phase 2: Ready for the friends test
 

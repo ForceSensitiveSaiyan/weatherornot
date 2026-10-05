@@ -2,3 +2,4 @@ node_modules/
 *.db
 *.db-journal
 .env
+scripts/sim-data/

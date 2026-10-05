@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node --no-warnings=ExperimentalWarning src/server.js",
     "dev": "WEATHER_PROVIDER=mock node --no-warnings=ExperimentalWarning --watch src/server.js",
-    "test": "node --no-warnings=ExperimentalWarning --test"
+    "test": "node --no-warnings=ExperimentalWarning --test",
+    "simulate": "node --no-warnings=ExperimentalWarning scripts/simulate.mjs"
   }
 }
