@@ -1,55 +1,59 @@
 # ☁️ WeatherOrNot
 
-Bet points on tomorrow's weather. Free-to-play: everyone starts with 1,000 points, and there's no real money involved.
+A free daily game: make 3 calls on **tomorrow's** weather where you live, keep your streak going, and beat your friends. No money involved.
 
-## How it works
+## How it plays
 
-- **Markets open automatically** every day for each city's *tomorrow*:
-  - *Will the high be above X°C?* The line is the forecast high rounded, +0.5, so it's close to a coin flip and there are no ties.
-  - *Will it rain at least 1 mm?*
-  - *Will wind gusts top X km/h?* The line is set just off the forecast.
-  - *Will it snow at least 0.5 cm?* Only offered when snow is plausible (snow in the forecast, or a low of 2°C or below).
-- **Pari-mutuel pools.** Every stake goes into one pot and the winning side splits it in proportion to what they bet. The house never takes a side, so there are no odds to beat just by reading the public forecast. If nobody backed the winning side, everyone gets their stake back.
-- **Betting closes** at local midnight when the target day starts in that city.
-- **Settlement** runs every 10 minutes and pays out once the day is over, using [Open-Meteo](https://open-meteo.com/) daily data (max/min temperature, precipitation, snowfall, max wind gusts) for the city's coordinates.
-- **Daily top-up.** Players under 100 points can top back up to 100 once per (UTC) day, so going broke isn't game over.
-- **Leagues.** Anyone can create a private league and share its 6-character code; members see their own standings alongside the global leaderboard.
+- **Your city.** Search any town or city. On a first visit the app guesses your city from your device's time zone.
+- **3 calls a day.** Every place gets the same three yes/no questions about tomorrow:
+  - ☔ *Will it rain?* (at least 1 mm)
+  - 🌡️ *Warmer than today?* (judged against today's *actual* high)
+  - A wildcard picked from the forecast: ❄️ *Will it snow?* when it's cold, 🥵 *Will it hit 30°C?* when it's hot, otherwise 💨 *Gusts over 40 km/h?* (lines are set from the forecast)
+- **No signup to play.** Your first tap makes a guest account (e.g. *BreezyOtter42*). Save it with a name and password to play on other devices.
+- **Locks at local midnight.** You can change your calls until then. Results come in once the day is over.
+- **Scoring.** 10 points per right call, **+10** if you called it against the forecast, **+5** if a third or fewer of the players agreed with you.
+- **Streaks, results and sharing.** Each morning shows yesterday's results with a spoiler-free emoji grid to share:
+  ```
+  WeatherOrNot #4 · Cape Town
+  ☔✅ 🌡️❌ ❄️✅
+  2/3 · 20 pts · 🔥2
+  ```
+- **Leagues.** Create one and send the invite link (`/join/ABC123`). Friends who open it see the league and join with one tap.
+- **The page looks like tomorrow's sky** (sunny, cloudy, rain, snow, storm, fog), and it can be installed to a phone's home screen.
 
 ## Running it
 
 Needs Node.js 22.5 or newer. There are no dependencies to install: it uses Node's built-in SQLite.
 
 ```sh
-npm start          # real weather from Open-Meteo, http://localhost:3000
-npm run dev        # offline fake weather, restarts on file changes
+npm start          # real weather and city search from Open-Meteo, http://localhost:3000
+npm run dev        # offline fake weather and a fixed list of cities, restarts on changes
 npm test
 ```
-
-Environment variables:
 
 | Variable | Default | |
 |---|---|---|
 | `PORT` | `3000` | |
-| `DB_PATH` | `weatherornot.db` | SQLite file |
-| `WEATHER_PROVIDER` | `open-meteo` | `mock` for deterministic fake weather |
+| `DB_PATH` | `weatherornot.db` | SQLite file. Databases from the old points-betting version are refused; delete them first. |
+| `WEATHER_PROVIDER` | `open-meteo` | `mock` for fake weather and city search |
 
 ## Layout
 
 ```
-src/server.js   HTTP server, JSON API, static files, settlement timer
-src/game.js     game rules: accounts, markets, betting, settlement, top-ups, leagues
-src/markets.js  bet types: how each sets its line and resolves
-src/pool.js     pari-mutuel payout math
-src/weather.js  Open-Meteo and mock weather providers
-src/cities.js   cities, coordinates and time zones
-public/         the web UI (plain HTML/CSS/JS)
-test/           node:test suites
+src/server.js     HTTP server, JSON API, rate limiting, static files, settlement timer
+src/game.js       game rules: guests and accounts, daily rounds, picks, scoring, streaks, leagues
+src/questions.js  the daily questions: wildcard choice, lines, how each one resolves
+src/places.js     city search (Open-Meteo geocoding) and the popular-cities list
+src/weather.js    Open-Meteo and mock weather providers
+src/time.js       local dates, local midnight, game numbers
+public/           the web app (plain HTML/CSS/JS), icons, share image
+test/             node:test suites
 ```
 
-## Known limitations / next steps
+## Before launching publicly
 
-- Settlement uses Open-Meteo's gridded model data for the city's coordinates, not a specific official weather station. Fine for a game; a real-money product would need a named station (e.g. NOAA/NWS) as its source of truth.
-- New bet types apply from the next day's markets onward; days that already have markets aren't backfilled.
-- Adding a bet type is one entry in `src/markets.js`.
-- League standings rank members by their overall points, not points earned since joining.
-- User-chosen cities (via Open-Meteo's geocoding API) are a natural next feature.
+- **Weather data licence.** Open-Meteo's free API is for non-commercial use only. Anything with ads or revenue needs their paid plan. Their CC BY 4.0 attribution is in the footer.
+- **Results use model data for a grid square,** not a specific official weather station. Fine for a game, but say so, because "it rained at my house!" disputes will happen.
+- **No password reset yet.** Saved accounts are name + password only.
+- **No push notifications yet.** Players have to come back to see results; a morning "You called it ☔ 3/3" notification is the next big retention feature.
+- **A single SQLite file** comfortably handles thousands of players. Back it up.

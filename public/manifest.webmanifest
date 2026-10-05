@@ -1,0 +1,14 @@
+{
+  "name": "WeatherOrNot",
+  "short_name": "WeatherOrNot",
+  "description": "Call tomorrow's weather. Beat your friends.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#5b8def",
+  "theme_color": "#3b82f6",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
