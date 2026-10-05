@@ -1,5 +1,13 @@
-// Weather providers return a Map of local date -> { tmax (°C), precip (mm) }
+// Weather providers return a Map of local date ->
+//   { tmax (°C), tmin (°C), precip (mm), snow (cm), gust (km/h) }
 // covering the last few days and the next few days for a city.
+const FIELDS = {
+  tmax: 'temperature_2m_max',
+  tmin: 'temperature_2m_min',
+  precip: 'precipitation_sum',
+  snow: 'snowfall_sum',
+  gust: 'wind_gusts_10m_max',
+};
 
 export function openMeteoProvider({ fetchImpl = fetch } = {}) {
   return {
@@ -9,7 +17,7 @@ export function openMeteoProvider({ fetchImpl = fetch } = {}) {
       url.search = new URLSearchParams({
         latitude: city.lat,
         longitude: city.lon,
-        daily: 'temperature_2m_max,precipitation_sum',
+        daily: Object.values(FIELDS).join(','),
         timezone: city.tz,
         past_days: '3',
         forecast_days: '3',
@@ -19,9 +27,8 @@ export function openMeteoProvider({ fetchImpl = fetch } = {}) {
       const { daily } = await res.json();
       const out = new Map();
       daily.time.forEach((date, i) => {
-        const tmax = daily.temperature_2m_max[i];
-        const precip = daily.precipitation_sum[i];
-        if (tmax != null && precip != null) out.set(date, { tmax, precip });
+        out.set(date, Object.fromEntries(
+          Object.entries(FIELDS).map(([key, name]) => [key, daily[name]?.[i] ?? null])));
       });
       return out;
     },
@@ -40,9 +47,15 @@ export function mockProvider() {
         d.setUTCDate(d.getUTCDate() + i);
         const date = d.toISOString().slice(0, 10);
         const r = hash(`${city.id}:${date}`);
+        const tmax = Math.round((-5 + (r % 4000) / 100) * 10) / 10;
+        const tmin = Math.round((tmax - 4 - ((r >>> 8) % 80) / 10) * 10) / 10;
+        const precip = r % 3 === 0 ? ((r >>> 4) % 200) / 10 : 0;
         out.set(date, {
-          tmax: Math.round((5 + (r % 3000) / 100) * 10) / 10,
-          precip: r % 3 === 0 ? ((r >>> 4) % 200) / 10 : 0,
+          tmax,
+          tmin,
+          precip,
+          snow: tmax < 2 && precip > 0 ? Math.round(precip * 0.7 * 10) / 10 : 0,
+          gust: 10 + ((r >>> 12) % 600) / 10,
         });
       }
       return out;

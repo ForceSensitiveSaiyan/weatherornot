@@ -1,11 +1,15 @@
+import { randomInt } from 'node:crypto';
 import { CITIES, cityById } from './cities.js';
 import { transaction } from './db.js';
 import { hashPassword, verifyPassword, newToken } from './auth.js';
 import { settlePool } from './pool.js';
 import { localDate, addDays } from './time.js';
+import { MARKET_KINDS, marketsFor, resolve } from './markets.js';
 
 export const STARTING_POINTS = 1000;
-export const RAIN_LINE_MM = 1.0;
+// Players below this can top back up to it once per (UTC) day, so going broke isn't game over.
+export const TOPUP_POINTS = 100;
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I lookalikes
 
 export class GameError extends Error {
   constructor(message, status = 400) {
@@ -19,11 +23,11 @@ export class GameError extends Error {
 export function createGame({ db, provider, now = () => new Date(), cities = CITIES }) {
   const q = {
     userByName: db.prepare('SELECT * FROM users WHERE name = ?'),
-    userById: db.prepare('SELECT id, name, points FROM users WHERE id = ?'),
+    userById: db.prepare('SELECT id, name, points, last_topup FROM users WHERE id = ?'),
     insertUser: db.prepare('INSERT INTO users (name, pass_hash, salt, points) VALUES (?, ?, ?, ?)'),
     insertSession: db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)'),
     sessionUser: db.prepare(
-      'SELECT u.id, u.name, u.points FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?'),
+      'SELECT u.id, u.name, u.points, u.last_topup FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?'),
     deleteSession: db.prepare('DELETE FROM sessions WHERE token = ?'),
     marketCount: db.prepare('SELECT COUNT(*) AS n FROM markets WHERE city_id = ? AND date = ?'),
     insertMarket: db.prepare(
@@ -45,6 +49,19 @@ export function createGame({ db, provider, now = () => new Date(), cities = CITI
       FROM bets b JOIN markets m ON m.id = b.market_id
       WHERE b.user_id = ? ORDER BY b.id DESC LIMIT 100`),
     leaderboard: db.prepare('SELECT name, points FROM users ORDER BY points DESC, id LIMIT 20'),
+    topup: db.prepare(
+      'UPDATE users SET points = ?, last_topup = ? WHERE id = ? AND points < ? AND (last_topup IS NULL OR last_topup < ?)'),
+    insertLeague: db.prepare('INSERT INTO leagues (name, code, owner_id) VALUES (?, ?, ?)'),
+    leagueByCode: db.prepare('SELECT * FROM leagues WHERE code = ?'),
+    leagueCodeExists: db.prepare('SELECT 1 FROM leagues WHERE code = ?'),
+    joinLeague: db.prepare('INSERT OR IGNORE INTO league_members (league_id, user_id) VALUES (?, ?)'),
+    leaveLeague: db.prepare('DELETE FROM league_members WHERE league_id = ? AND user_id = ?'),
+    userLeagues: db.prepare(`
+      SELECT l.id, l.name, l.code, l.owner_id FROM leagues l
+      JOIN league_members lm ON lm.league_id = l.id WHERE lm.user_id = ? ORDER BY l.name`),
+    standings: db.prepare(`
+      SELECT u.name, u.points FROM league_members lm JOIN users u ON u.id = lm.user_id
+      WHERE lm.league_id = ? ORDER BY u.points DESC, u.id`),
   };
 
   const today = (city) => localDate(city.tz, now());
@@ -75,7 +92,12 @@ export function createGame({ db, provider, now = () => new Date(), cities = CITI
     return token;
   }
 
-  const userForToken = (token) => (token ? q.sessionUser.get(token) ?? null : null);
+  const utcDay = () => now().toISOString().slice(0, 10);
+  const publicUser = (u) => u && {
+    id: u.id, name: u.name, points: u.points,
+    canTopUp: u.points < TOPUP_POINTS && (u.last_topup ?? '') < utcDay(),
+  };
+  const userForToken = (token) => (token ? publicUser(q.sessionUser.get(token)) ?? null : null);
   const logout = (token) => q.deleteSession.run(token);
 
   async function openMarkets() {
@@ -84,9 +106,7 @@ export function createGame({ db, provider, now = () => new Date(), cities = CITI
       if (q.marketCount.get(city.id, date).n > 0) continue;
       const forecast = (await provider.daily(city)).get(date);
       if (!forecast) continue;
-      // Put the temperature line at the forecast rounded, +0.5 so there are no ties.
-      q.insertMarket.run(city.id, date, 'temp_over', Math.round(forecast.tmax) + 0.5, forecast.tmax);
-      q.insertMarket.run(city.id, date, 'rain', RAIN_LINE_MM, forecast.precip);
+      for (const m of marketsFor(forecast)) q.insertMarket.run(city.id, date, m.kind, m.line, m.forecast);
     }
   }
 
@@ -100,10 +120,9 @@ export function createGame({ db, provider, now = () => new Date(), cities = CITI
     for (const [cityId, markets] of byCity) {
       const weather = await provider.daily(cityById.get(cityId));
       for (const m of markets) {
-        const obs = weather.get(m.date);
-        if (!obs) continue; // data not available yet; try again next tick
-        const observed = m.kind === 'temp_over' ? obs.tmax : obs.precip;
-        const outcome = (m.kind === 'temp_over' ? observed > m.line : observed >= m.line) ? 1 : 0;
+        const result = resolve(m, weather.get(m.date));
+        if (!result) continue; // data not available yet; try again next tick
+        const { value: observed, outcome } = result;
         transaction(db, () => {
           if (q.settleMarket.run(outcome, observed, m.id).changes === 0) return;
           const bets = q.marketBets.all(m.id);
@@ -132,8 +151,48 @@ export function createGame({ db, provider, now = () => new Date(), cities = CITI
       }
       if (q.debit.run(amount, userId, amount).changes === 0) throw new GameError('Not enough points');
       q.insertBet.run(marketId, userId, side, amount);
-      return q.userById.get(userId);
+      return publicUser(q.userById.get(userId));
     });
+  }
+
+  function topUp(userId) {
+    const day = utcDay();
+    if (q.topup.run(TOPUP_POINTS, day, userId, TOPUP_POINTS, day).changes === 0) {
+      throw new GameError(`Top-ups are for players under ${TOPUP_POINTS} points, once a day`, 409);
+    }
+    return publicUser(q.userById.get(userId));
+  }
+
+  function createLeague(userId, name) {
+    name = String(name ?? '').trim();
+    if (name.length < 1 || name.length > 40) throw new GameError('League name must be 1–40 characters');
+    return transaction(db, () => {
+      let code;
+      do {
+        code = Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+      } while (q.leagueCodeExists.get(code));
+      const { lastInsertRowid } = q.insertLeague.run(name, code, userId);
+      q.joinLeague.run(lastInsertRowid, userId);
+      return { id: Number(lastInsertRowid), name, code };
+    });
+  }
+
+  function joinLeague(userId, code) {
+    const league = q.leagueByCode.get(String(code ?? '').trim().toUpperCase());
+    if (!league) throw new GameError('No league with that code', 404);
+    q.joinLeague.run(league.id, userId);
+    return { id: league.id, name: league.name, code: league.code };
+  }
+
+  function leaveLeague(userId, leagueId) {
+    if (q.leaveLeague.run(leagueId, userId).changes === 0) throw new GameError('You are not in that league', 404);
+  }
+
+  function myLeagues(userId) {
+    return q.userLeagues.all(userId).map((l) => ({
+      id: l.id, name: l.name, code: l.code, isOwner: l.owner_id === userId,
+      standings: q.standings.all(l.id),
+    }));
   }
 
   function listMarkets(userId) {
@@ -155,13 +214,12 @@ export function createGame({ db, provider, now = () => new Date(), cities = CITI
 
   function describe(m) {
     const city = cityById.get(m.city_id);
-    const question = m.kind === 'temp_over'
-      ? `Will the high in ${city.name} be above ${m.line}°C?`
-      : `Will ${city.name} get at least ${m.line} mm of rain?`;
+    const kind = MARKET_KINDS[m.kind];
     return {
       id: m.id, cityId: m.city_id, city: city.name, date: m.date, kind: m.kind,
+      label: kind.label, unit: kind.unit,
       line: m.line, forecast: m.forecast, status: m.status, outcome: m.outcome,
-      observed: m.observed, question,
+      observed: m.observed, question: kind.question(city.name, m.line),
     };
   }
 
@@ -180,7 +238,8 @@ export function createGame({ db, provider, now = () => new Date(), cities = CITI
   }
 
   return {
-    register, login, logout, userForToken, placeBet, listMarkets, myBets, leaderboard,
+    register, login, logout, userForToken, placeBet, listMarkets, myBets, leaderboard, topUp,
+    createLeague, joinLeague, leaveLeague, myLeagues,
     openMarkets, settleMarkets, tick,
   };
 }

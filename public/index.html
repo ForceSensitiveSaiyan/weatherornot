@@ -28,10 +28,30 @@
     </section>
 
     <section>
-      <h2>Tomorrow's markets</h2>
+      <div class="heading-row">
+        <h2>Tomorrow's markets</h2>
+        <select id="city-filter" aria-label="Filter by city"><option value="">All cities</option></select>
+      </div>
       <p class="muted">Pick YES or NO. Every stake goes into one pot and the winners split it in proportion to what they bet.
         Betting closes at local midnight; bets settle once the day is over.</p>
       <div id="markets" class="grid"></div>
+    </section>
+
+    <section id="leagues-section" hidden>
+      <h2>Leagues</h2>
+      <p class="muted">Make a private league and share its code so friends can join.</p>
+      <div class="row wrap">
+        <form id="create-league" class="inline">
+          <input name="name" placeholder="League name" maxlength="40" required>
+          <button type="submit">Create</button>
+        </form>
+        <form id="join-league" class="inline">
+          <input name="code" placeholder="Join code" maxlength="6" required>
+          <button type="submit" class="secondary">Join</button>
+        </form>
+      </div>
+      <p id="league-error" class="error"></p>
+      <div id="leagues" class="grid"></div>
     </section>
 
     <div class="columns">

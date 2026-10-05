@@ -22,6 +22,12 @@ export function createApp(game) {
     'POST /api/bets': ({ user, body }) => ({
       user: game.placeBet(requireUser(user).id, Number(body.marketId), body.side, body.amount),
     }),
+    'POST /api/topup': ({ user }) => ({ user: game.topUp(requireUser(user).id) }),
+    'GET /api/leagues': ({ user }) => ({ leagues: game.myLeagues(requireUser(user).id) }),
+    'POST /api/leagues': ({ user, body }) => ({ league: game.createLeague(requireUser(user).id, body.name) }),
+    'POST /api/leagues/join': ({ user, body }) => ({ league: game.joinLeague(requireUser(user).id, body.code) }),
+    'POST /api/leagues/leave': ({ user, body }) => (
+      game.leaveLeague(requireUser(user).id, Number(body.leagueId)), { ok: true }),
   };
 
   return async (req, res) => {
