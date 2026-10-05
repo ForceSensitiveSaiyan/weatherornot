@@ -1,0 +1,15 @@
+{
+  "name": "weatherornot",
+  "version": "0.1.0",
+  "description": "Bet points on tomorrow's weather. Free-to-play, pari-mutuel pools, settled from real weather data.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning src/server.js",
+    "dev": "WEATHER_PROVIDER=mock node --no-warnings=ExperimentalWarning --watch src/server.js",
+    "test": "node --no-warnings=ExperimentalWarning --test"
+  }
+}

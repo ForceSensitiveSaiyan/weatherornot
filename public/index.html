@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WeatherOrNot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>☁️ Weather<span>Or</span>Not</h1>
+    <div id="account"></div>
+  </header>
+
+  <main>
+    <section id="auth" hidden>
+      <h2>Bet points on tomorrow's weather</h2>
+      <p class="muted">Everyone starts with 1,000 points. No real money, just bragging rights.</p>
+      <form id="auth-form">
+        <input name="name" placeholder="Name" autocomplete="username" required>
+        <input name="password" type="password" placeholder="Password" autocomplete="current-password" required>
+        <div class="row">
+          <button type="submit" data-action="login">Log in</button>
+          <button type="submit" data-action="register" class="secondary">Sign up</button>
+        </div>
+        <p id="auth-error" class="error"></p>
+      </form>
+    </section>
+
+    <section>
+      <h2>Tomorrow's markets</h2>
+      <p class="muted">Pick YES or NO. Every stake goes into one pot and the winners split it in proportion to what they bet.
+        Betting closes at local midnight; bets settle once the day is over.</p>
+      <div id="markets" class="grid"></div>
+    </section>
+
+    <div class="columns">
+      <section id="history" hidden>
+        <h2>My bets</h2>
+        <ul id="my-bets" class="list"></ul>
+      </section>
+      <section>
+        <h2>Leaderboard</h2>
+        <ol id="leaderboard" class="list"></ol>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
