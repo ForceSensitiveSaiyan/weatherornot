@@ -128,7 +128,7 @@ test('leagues: create, preview the invite, join, leave', () => {
   const league = game.createLeague(ann.id, '  Office Forecasters ');
   assert.match(league.code, /^[A-Z2-9]{6}$/);
   assert.deepEqual(game.leaguePreview(league.code.toLowerCase()),
-    { name: 'Office Forecasters', code: league.code, members: 1 });
+    { name: 'Office Forecasters', code: league.code, members: 1, owner: ann.name });
   game.joinLeague(ben.id, league.code);
   game.joinLeague(ben.id, league.code);
   assert.equal(game.myLeagues(ann.id)[0].standings.length, 2);

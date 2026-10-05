@@ -1,5 +1,5 @@
 const $ = (sel) => document.querySelector(sel);
-const state = { user: null, stats: null, game: null, leagues: [], placeId: null, popular: [] };
+const state = { user: null, stats: null, game: null, leagues: [], placeId: null, popular: [], resultsFirst: false };
 
 async function api(path, body) {
   const res = await fetch(path, body
@@ -37,14 +37,28 @@ function skyFor(code) {
   return ['rain', '🌧️'];
 }
 
-const toF = (c) => Math.round(c * 9 / 5 + 32);
+// One temperature unit, picked from the player's region.
+const FAHRENHEIT_REGIONS = ['US', 'LR', 'MM', 'BS', 'BZ', 'KY', 'PW', 'FM', 'MH'];
+const useF = (() => {
+  try { return FAHRENHEIT_REGIONS.includes(new Intl.Locale(navigator.language).maximize().region); } catch { return false; }
+})();
+const fmtTemp = (c) => (useF ? `${Math.round(c * 9 / 5 + 32)}°F` : `${Math.round(c * 10) / 10}°C`);
 function fmt(value, unit) {
   if (value == null) return '–';
-  const v = Math.round(value * 10) / 10;
-  return unit === '°C' ? `${v}°C / ${toF(v)}°F` : `${v} ${unit}`;
+  return unit === '°C' ? fmtTemp(value) : `${Math.round(value * 10) / 10} ${unit}`;
 }
-const fmtDay = (date, opts = { weekday: 'long', day: 'numeric', month: 'short' }) =>
-  new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { ...opts, timeZone: 'UTC' });
+const fmtDay = (date, opts) => new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { ...opts, timeZone: 'UTC' });
+
+// Titles and details with a bit of personality; the server's are the fallback.
+const COPY = {
+  rain: { detail: 'At least 1 mm. A light drizzle won\'t count.' },
+  warmer: { detail: 'Tomorrow\'s high vs today\'s high' },
+  snow: { detail: 'At least 0.5 cm of the white stuff' },
+  heat: { title: (q) => `Will it hit ${fmtTemp(q.line)}?`, detail: 'The hottest point of the day' },
+  wind: { detail: 'The strongest gust of the day' },
+};
+const titleOf = (q) => COPY[q.key]?.title?.(q) ?? q.title;
+const detailOf = (q) => COPY[q.key]?.detail ?? q.detail;
 
 function untilText(iso) {
   const ms = Date.parse(iso) - Date.now();
@@ -54,31 +68,31 @@ function untilText(iso) {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
+const picksMade = () => state.game.round.questions.filter((q) => q.myPick != null).length;
+
 // ---- rendering -----------------------------------------------------------
 
 function render() {
-  const { game, user, stats } = state;
+  const { game, stats } = state;
   $('#streak').hidden = !stats?.streak;
   if (stats?.streak) $('#streak').textContent = `🔥 ${stats.streak}`;
+  $('#main').hidden = !game;
   if (!game) return;
 
   const { round, place } = game;
   const [sky, icon] = skyFor(round.sky);
   document.documentElement.dataset.sky = sky;
+  document.querySelector('meta[name=theme-color]').content =
+    getComputedStyle(document.documentElement).getPropertyValue('--sky-top').trim();
   $('#sky-icon').textContent = icon;
   $('#place-name').textContent = place.name;
-  $('#hero-title').textContent = `${fmtDay(round.date, { weekday: 'long' })} in ${place.name}`;
+  $('#hero-day').textContent = 'Tomorrow';
   renderCountdown();
 
   $('#questions').innerHTML = round.questions.map((q) => questionCard(q, round)).join('');
   renderDone();
   renderResults();
-
-  $('#board-title').textContent = `${place.name} · this week`;
-  $('#leaderboard').innerHTML = game.leaderboard.map((r) =>
-    `<li class="${r.name === user?.name ? 'me' : ''}"><span class="name">${esc(r.name)}</span><span>${r.points} pts</span></li>`,
-  ).join('') || '<li class="empty">No scores yet this week. Be the first!</li>';
-
+  renderBoard($('#leaderboard'), game.leaderboard, 'No scores yet this week. Be the first!');
   renderLeagues();
   renderAccount();
 }
@@ -87,51 +101,64 @@ function renderCountdown() {
   const { round } = state.game ?? {};
   if (!round) return;
   const left = untilText(round.closesAt);
-  $('#hero-sub').textContent = left === 'locked'
-    ? `Game #${round.number} is locked. Results tomorrow.`
-    : `Game #${round.number} · locks in ${left}`;
+  const day = fmtDay(round.date, { weekday: 'short', day: 'numeric', month: 'short' });
+  const dots = round.questions.map((q) => `<i class="${q.myPick != null ? 'on' : ''}"></i>`).join('');
+  $('#hero-sub').innerHTML = left === 'locked'
+    ? `${day} · Game #${round.number} · locked 🔒`
+    : `${day} · Game #${round.number} · locks in ${left} <span class="dots" aria-label="${picksMade()} of 3 called">${dots}</span>`;
+}
+
+function crowdLine(q) {
+  const total = q.crowd.yes + q.crowd.no;
+  const value = `${q.key === 'warmer' ? 'high ' : ''}${fmt(q.forecast, q.unit)}`;
+  let tag;
+  if (q.myPick == null) tag = '<span class="tag-gold">beat it: +10</span>';
+  else if (q.myPick === q.forecastSays) tag = '<span>with the forecast</span>';
+  else tag = '<span class="tag-gold">🎯 +10 if right</span>';
+  // A split from one or two players means nothing, so only show it from three.
+  const yesPct = total ? Math.round((q.crowd.yes / total) * 100) : 0;
+  const split = q.myPick != null && total >= 3
+    ? `<div class="bar"><div class="y" style="width:${yesPct}%"></div><div class="n" style="width:${100 - yesPct}%"></div></div>
+       <div class="crowd-row"><span>${yesPct}% say yes</span><span>${total} players</span></div>`
+    : '';
+  return `<div class="crowd"><div class="crowd-row"><span>Forecast: <strong>${q.forecastSays ? 'YES' : 'NO'}</strong> · ${value}</span>${tag}</div>${split}</div>`;
 }
 
 function questionCard(q, round) {
-  const locked = untilText(round.closesAt) === 'locked';
-  const picked = q.myPick != null;
-  const total = q.crowd.yes + q.crowd.no;
-  const yesPct = total ? Math.round((q.crowd.yes / total) * 100) : 0;
-  const crowd = picked && total
-    ? `<div class="crowd">
-        <div class="bar"><div class="y" style="width:${yesPct}%"></div><div class="n" style="width:${100 - yesPct}%"></div></div>
-        <div class="crowd-row"><span>${yesPct}% say yes · ${total} ${total === 1 ? 'player' : 'players'}</span>
-        <span>Forecast: ${fmt(q.forecast, q.unit)}</span></div>
-      </div>`
-    : `<div class="crowd"><div class="crowd-row"><span>Forecast: ${fmt(q.forecast, q.unit)}</span>
-        <span>Forecast says <strong>${q.forecastSays ? 'yes' : 'no'}</strong></span></div></div>`;
+  const locked = untilText(round.closesAt) === 'locked' ? 'disabled' : '';
   return `<article class="card q" data-key="${q.key}">
     <div class="q-head"><div class="q-emoji" aria-hidden="true">${q.emoji}</div>
-      <div><div class="q-title">${esc(q.title)}</div><div class="q-detail">${esc(q.detail)}</div></div></div>
+      <div><div class="q-title">${esc(titleOf(q))}</div><div class="q-detail">${esc(detailOf(q))}</div></div></div>
     <div class="choices">
-      <button class="choice yes" data-pick="1" aria-pressed="${q.myPick === 1}" ${locked ? 'disabled' : ''}>Yes</button>
-      <button class="choice no" data-pick="0" aria-pressed="${q.myPick === 0}" ${locked ? 'disabled' : ''}>No</button>
+      <button class="choice yes" data-pick="1" aria-pressed="${q.myPick === 1}" ${locked}>Yes</button>
+      <button class="choice no" data-pick="0" aria-pressed="${q.myPick === 0}" ${locked}>No</button>
     </div>
-    ${crowd}
+    ${crowdLine(q)}
   </article>`;
 }
 
 function renderDone() {
   const { round, place } = state.game;
-  const n = round.questions.filter((q) => q.myPick != null).length;
+  const n = picksMade();
   const el = $('#done');
-  el.hidden = n === 0;
-  if (n === 0) return;
-  el.innerHTML = n < round.questions.length
-    ? `<div class="big">${n} of ${round.questions.length} called</div><p class="muted">Make all three to get the most out of tomorrow.</p>`
-    : `<div class="big">You're locked in ✅</div>
-       <p class="muted">You can change your calls until midnight in ${esc(place.name)}. Results land in the morning.</p>
-       <div class="btn-row"><button class="btn" data-action="challenge">Challenge a friend</button></div>`;
+  el.hidden = n < round.questions.length;
+  if (el.hidden) return;
+  const bold = round.questions.filter((q) => q.myPick !== q.forecastSays).length;
+  el.innerHTML = `<div class="big">Locked in. Now we wait 🍿</div>
+    <p class="muted">${bold ? `You went against the forecast ${bold === 1 ? 'once' : `${bold} times`}. Brave. ` : ''}Change your mind any time before midnight in ${esc(place.name)}.</p>
+    <div class="btn-row"><button class="btn" data-action="challenge">Challenge a friend</button></div>`;
+}
+
+function resultHeadline(r) {
+  if (r.questions.some((q) => q.score?.bonuses.includes('beatForecast'))) return 'You out-forecast the forecast! 🎯';
+  return ['Rough one. The sky had other ideas.', 'One out of three. Tomorrow\'s another day.',
+    'Nice forecasting!', 'Perfect call! ☀️'][r.score.correct] ?? 'Results are in';
 }
 
 function renderResults() {
   const last = state.game.lastRound;
-  const el = $('#results');
+  const el = $('#results') ?? Object.assign(document.createElement('section'), { id: 'results', className: 'card results' });
+  (state.resultsFirst ? $('#results-top') : $('#results-bottom')).append(el);
   el.hidden = !last;
   if (!last) return;
   const played = !!last.score;
@@ -140,54 +167,76 @@ function renderResults() {
       <h2>${fmtDay(last.date, { weekday: 'long' })}'s results · #${last.number}</h2>
       ${played ? `<div class="result-score">${last.score.correct}/${last.questions.length}</div>` : ''}
     </div>
+    ${played ? `<p class="muted" style="margin:4px 0 0">${resultHeadline(last)}</p>` : ''}
     <ul class="result-list">${last.questions.map((q) => {
       const mark = q.score ? (q.score.correct ? '✅' : '❌') : '';
       const bonuses = (q.score?.bonuses ?? []).map((b) =>
         `<span class="bonus">${b === 'beatForecast' ? 'beat the forecast' : 'bold call'}</span>`).join('');
-      return `<li><span class="r-emoji">${q.emoji}</span>
-        <span><strong>${esc(q.title)}</strong> ${q.result.answer ? 'Yes' : 'No'}${bonuses}<br>
-        <span class="r-actual">Actual: ${fmt(q.result.observed, q.unit)}${q.key === 'warmer' ? ` vs ${fmt(q.result.line, q.unit)}` : ''}</span></span>
+      const actual = q.key === 'warmer'
+        ? `${fmt(q.result.observed, q.unit)} vs ${fmt(q.result.line, q.unit)} today`
+        : fmt(q.result.observed, q.unit);
+      return `<li><span class="r-emoji" aria-hidden="true">${q.emoji}</span>
+        <span><strong>${esc(titleOf(q))}</strong> ${q.result.answer ? 'Yes' : 'No'}${bonuses}<br>
+        <span class="r-actual">Actual: ${actual}</span></span>
         <span class="r-points ${q.score?.points ? '' : 'zero'}">${q.score ? `${mark} ${q.score.points}` : ''}</span></li>`;
     }).join('')}</ul>
     ${played
       ? `<div class="btn-row"><span class="result-score">${last.score.points} pts</span><button class="btn" data-action="share">Share result</button></div>`
-      : '<p class="muted">You didn\'t play this one. Make your calls above for tomorrow!</p>'}`;
+      : '<p class="muted">You didn\'t play this one. Make your calls for tomorrow!</p>'}`;
+}
+
+// Standard competition ranking: tied scores share a place, shown as "=1".
+function renderBoard(el, rows, emptyText) {
+  if (!rows.length) {
+    el.outerHTML = `<p class="empty" id="${el.id}">${emptyText}</p>`;
+    return;
+  }
+  const html = rows.map((r, i) => {
+    const rank = rows.findIndex((x) => x.points === r.points) + 1;
+    const tied = rows.filter((x) => x.points === r.points).length > 1;
+    return `<li class="${r.name === state.user?.name ? 'me' : ''}"><span class="rank">${tied ? '=' : ''}${rank}</span>
+      <span class="name">${esc(r.name)}</span><span class="pts">${r.points} pts</span></li>`;
+  }).join('');
+  if (el.tagName === 'OL') el.innerHTML = html;
+  else el.outerHTML = `<ol class="board" id="${el.id}">${html}</ol>`;
 }
 
 function renderLeagues() {
   $('#leagues').innerHTML = state.leagues.map((l) => `
     <div class="league" data-id="${l.id}" data-code="${l.code}" data-name="${esc(l.name)}">
       <div class="league-head"><strong>${esc(l.name)}</strong>
-        <span><button class="btn small" data-action="invite">Invite</button>
-        <button class="linkish" data-action="leave">Leave</button></span></div>
-      <ol class="board">${l.standings.map((s) =>
-        `<li class="${s.name === state.user?.name ? 'me' : ''}"><span class="name">${esc(s.name)}</span><span>${s.points} pts</span></li>`).join('')}</ol>
+        <span class="league-actions"><button class="btn small" data-action="invite">Invite</button>
+          <details class="menu"><summary aria-label="More options">⋯</summary>
+            <div class="menu-panel"><button data-action="leave">Leave league</button></div></details></span></div>
+      <ol class="board" id="league-${l.id}"></ol>
     </div>`).join('');
+  for (const l of state.leagues) renderBoard($(`#league-${l.id}`), l.standings, '');
 }
 
 function renderAccount() {
-  const { user } = state;
+  const { user, stats } = state;
   const el = $('#account');
-  if (!user || user.guest) {
-    const mode = el.dataset.mode ?? 'save';
-    el.innerHTML = `
-      <h2>${user ? `You're playing as ${esc(user.name)}` : 'Your account'}</h2>
-      <p class="muted">${mode === 'login'
-        ? 'Log in to pick up where you left off.'
-        : user ? 'Save your account to keep your streak and play on other devices.' : 'Just start playing. We\'ll make you an account. You can save it later.'}</p>
-      ${user || mode === 'login' ? `<form id="account-form" class="stack" data-mode="${mode}">
-        <input name="name" placeholder="Name" autocomplete="username" required>
-        <input name="password" type="password" placeholder="Password (6+ characters)"
-          autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" required>
-        <button class="btn" type="submit">${mode === 'login' ? 'Log in' : 'Save account'}</button>
-        <p class="error"></p>
-      </form>` : ''}
-      <button class="linkish" data-action="toggle-login">${mode === 'login' ? 'Back' : 'Already have an account? Log in'}</button>`;
-  } else {
-    el.innerHTML = `<h2>${esc(user.name)}</h2>
-      <p class="muted">${state.stats.points} pts from ${state.stats.played} ${state.stats.played === 1 ? 'game' : 'games'}${state.stats.streak ? ` · 🔥 ${state.stats.streak}-day streak` : ''}</p>
-      <button class="linkish" data-action="logout">Log out</button>`;
+  const mode = el.dataset.mode ?? 'closed';
+  if (user && !user.guest) {
+    el.innerHTML = `<div class="account-row"><div><strong>${esc(user.name)}</strong>
+      <p class="muted small-print">${stats.points} pts · ${stats.played} ${stats.played === 1 ? 'game' : 'games'}${stats.streak ? ` · 🔥 ${stats.streak}` : ''}</p></div>
+      <button class="linkish" data-action="logout">Log out</button></div>`;
+    return;
   }
+  const form = (kind) => `<form id="account-form" class="stack" data-mode="${kind}">
+      <input name="name" placeholder="Name" autocomplete="username" required aria-label="Name">
+      <input name="password" type="password" placeholder="Password (6+ characters)" aria-label="Password"
+        autocomplete="${kind === 'login' ? 'current-password' : 'new-password'}" required>
+      <button class="btn" type="submit">${kind === 'login' ? 'Log in' : 'Save my account'}</button>
+      <p class="error"></p>
+    </form>`;
+  el.innerHTML = `<div class="account-row">
+      <p>${user ? `Playing as <strong>${esc(user.name)}</strong>` : 'No account needed. Just play.'}</p>
+      ${user && mode === 'closed' ? '<button class="btn small secondary" data-action="open-save">Save your streak</button>' : ''}
+    </div>
+    ${mode === 'save' && user ? `<p class="muted small-print" style="margin:8px 0 0">Pick a name and password to keep your streak and play on other devices.</p>${form('save')}` : ''}
+    ${mode === 'login' ? form('login') : ''}
+    <button class="linkish small-print" data-action="toggle-login">${mode === 'login' ? 'Cancel' : 'Already have an account? Log in'}</button>`;
 }
 
 // ---- sharing -------------------------------------------------------------
@@ -217,10 +266,14 @@ function resultText() {
 // ---- actions -------------------------------------------------------------
 
 async function loadGame() {
-  if (!state.placeId) return;
+  if (!state.placeId) return render();
   try {
     state.game = await api(`/api/game?place=${encodeURIComponent(state.placeId)}`);
     if (state.game.stats) state.stats = state.game.stats;
+    // A result you haven't seen yet goes to the top, once.
+    const last = state.game.lastRound;
+    state.resultsFirst = !!last?.score && store.get('seenResult') !== String(last.id);
+    if (state.resultsFirst) store.set('seenResult', String(last.id));
   } catch (err) {
     toast(err.message);
     if (/Unknown place/.test(err.message)) openPicker();
@@ -234,19 +287,35 @@ async function loadAll() {
   await loadGame();
 }
 
+// Picks update the card in place, so the button can animate.
 $('#questions').addEventListener('click', async (e) => {
   const btn = e.target.closest('.choice');
   if (!btn || btn.disabled) return;
-  const key = btn.closest('.q').dataset.key;
+  const card = btn.closest('.q');
+  const key = card.dataset.key;
+  const before = picksMade();
+  card.querySelectorAll('.choice').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+  btn.classList.remove('pop');
+  void btn.offsetWidth; // restart the animation
+  btn.classList.add('pop');
+  navigator.vibrate?.(10);
   try {
-    const { round, user, stats } = await api('/api/picks', {
-      roundId: state.game.round.id, key, pick: Number(btn.dataset.pick),
-    });
+    const { round, user, stats } = await api('/api/picks', { roundId: state.game.round.id, key, pick: Number(btn.dataset.pick) });
+    const firstPlay = !state.user;
     Object.assign(state, { user, stats });
     state.game.round = round;
-    render();
+    card.querySelector('.crowd').outerHTML = crowdLine(round.questions.find((q) => q.key === key));
+    renderCountdown();
+    renderDone();
+    $('#streak').hidden = !stats.streak;
+    $('#streak').textContent = `🔥 ${stats.streak}`;
+    if (firstPlay) renderAccount();
+    if (before < round.questions.length && picksMade() === round.questions.length) {
+      setTimeout(() => $('#done').scrollIntoView({ behavior: 'smooth', block: 'center' }), 250);
+    }
   } catch (err) {
     toast(err.message);
+    render();
   }
 });
 
@@ -270,11 +339,17 @@ document.addEventListener('click', async (e) => {
     await api('/api/logout', {});
     loadAll();
   }
-  if (action === 'toggle-login') {
+  if (action === 'open-save' || action === 'toggle-login') {
     const el = $('#account');
-    el.dataset.mode = el.dataset.mode === 'login' ? 'save' : 'login';
+    el.dataset.mode = action === 'open-save' ? 'save' : el.dataset.mode === 'login' ? 'closed' : 'login';
     renderAccount();
+    el.querySelector('input')?.focus();
   }
+});
+
+// Close any open ⋯ menu when tapping elsewhere.
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('details.menu[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
 });
 
 document.addEventListener('submit', async (e) => {
@@ -284,8 +359,8 @@ document.addEventListener('submit', async (e) => {
     const mode = e.target.dataset.mode;
     try {
       await api(mode === 'login' ? '/api/login' : '/api/account', { name: form.get('name'), password: form.get('password') });
-      $('#account').dataset.mode = 'save';
-      toast(mode === 'login' ? 'Welcome back!' : 'Account saved');
+      $('#account').dataset.mode = 'closed';
+      toast(mode === 'login' ? 'Welcome back!' : 'Saved. Your streak is safe 🔥');
       loadAll();
     } catch (err) {
       e.target.querySelector('.error').textContent = err.message;
@@ -317,7 +392,7 @@ function choosePlace(place) {
 function listPlaces(places, label) {
   $('#place-results').innerHTML = (label ? `<li class="label">${label}</li>` : '') + (places.map((p, i) =>
     `<li><button data-index="${i}"><strong>${esc(p.name)}</strong> <small>${esc(p.country)}</small></button></li>`).join('')
-    || '<li class="empty">No places found</li>');
+    || '<li class="empty">No places found. Try a nearby town?</li>');
   $('#place-results').onclick = (e) => {
     const btn = e.target.closest('button[data-index]');
     if (btn) choosePlace(places[Number(btn.dataset.index)]);
@@ -365,13 +440,15 @@ async function handleInvite() {
     if (state.leagues.some((l) => l.code === league.code)) return toast(`You're already in ${league.name}`);
     const el = $('#invite');
     el.hidden = false;
-    el.innerHTML = `<span>You've been invited to <strong>${esc(league.name)}</strong> (${league.members} ${league.members === 1 ? 'player' : 'players'})</span>
-      <button class="btn small">Join</button>`;
+    el.innerHTML = `<div class="big">${league.owner ? `${esc(league.owner)} invited you to` : 'You\'re invited to'} ${esc(league.name)} 🏆</div>
+      <p class="muted" style="margin:0">${league.members} ${league.members === 1 ? 'player' : 'players'} calling tomorrow's weather. Think you can beat them?</p>
+      <button class="btn">Join the league</button>`;
     el.querySelector('button').onclick = async () => {
       await api('/api/leagues/join', { code });
       el.hidden = true;
-      toast(`You joined ${league.name}!`);
-      loadAll();
+      toast(`You're in! Now make your 3 calls`);
+      await loadAll();
+      $('#questions').scrollIntoView({ behavior: 'smooth' });
     };
   } catch {
     toast('That invite link has expired');

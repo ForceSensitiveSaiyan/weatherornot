@@ -25,6 +25,7 @@ export class GameError extends Error {
 export function createGame({ db, provider, geocoder, now = () => new Date() }) {
   const q = {
     userByName: db.prepare('SELECT * FROM users WHERE name = ?'),
+    userById: db.prepare('SELECT name FROM users WHERE id = ?'),
     insertUser: db.prepare('INSERT INTO users (name, pass_hash, salt) VALUES (?, ?, ?)'),
     claimUser: db.prepare('UPDATE users SET name = ?, pass_hash = ?, salt = ? WHERE id = ? AND pass_hash IS NULL'),
     insertSession: db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)'),
@@ -321,7 +322,8 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
   function leaguePreview(code) {
     const league = q.leagueByCode.get(String(code ?? '').trim().toUpperCase());
     if (!league) throw new GameError('No league with that code', 404);
-    return { name: league.name, code: league.code, members: q.standings.all(league.id).length };
+    const members = q.standings.all(league.id);
+    return { name: league.name, code: league.code, members: members.length, owner: q.userById.get(league.owner_id)?.name };
   }
 
   function leaveLeague(userId, leagueId) {

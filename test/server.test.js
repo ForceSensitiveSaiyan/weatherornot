@@ -32,6 +32,8 @@ test('first pick creates a guest session; invite links serve the app', async (t)
 
   const page = await fetch(`${base}/join/ABC123`);
   assert.match(page.headers.get('content-type'), /text\/html/);
+  // Link previews need absolute image URLs.
+  assert.match(await page.text(), new RegExp(`<meta property="og:image" content="${base}/og.png">`));
   assert.equal((await fetch(`${base}/missing.png`)).status, 404);
 });
 

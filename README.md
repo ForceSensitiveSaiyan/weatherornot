@@ -36,6 +36,7 @@ npm test
 | `PORT` | `3000` | |
 | `DB_PATH` | `weatherornot.db` | SQLite file. Databases from the old points-betting version are refused; delete them first. |
 | `WEATHER_PROVIDER` | `open-meteo` | `mock` for fake weather and city search |
+| `PUBLIC_URL` | from the request | The site's public address, e.g. `https://weatherornot.app`. Set it in production so link previews (WhatsApp, Facebook, X) get absolute image URLs. |
 
 ## Layout
 
@@ -46,7 +47,8 @@ src/questions.js  the daily questions: wildcard choice, lines, how each one reso
 src/places.js     city search (Open-Meteo geocoding) and the popular-cities list
 src/weather.js    Open-Meteo and mock weather providers
 src/time.js       local dates, local midnight, game numbers
-public/           the web app (plain HTML/CSS/JS), icons, share image
+public/           the web app (plain HTML/CSS/JS), icons, share image (og.png)
+public/fonts/     Fredoka, self-hosted (SIL Open Font License, see OFL.txt)
 test/             node:test suites
 ```
 

@@ -7,16 +7,18 @@
   <meta name="description" content="A free daily game: make 3 calls on tomorrow's weather where you live, keep your streak, and beat your friends.">
   <meta property="og:title" content="WeatherOrNot">
   <meta property="og:description" content="3 calls on tomorrow's weather. Can you beat the forecast — and your friends?">
-  <meta property="og:image" content="/og.png">
+  <meta property="og:url" content="{{ORIGIN}}/">
+  <meta property="og:image" content="{{ORIGIN}}/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="WeatherOrNot: 3 calls on tomorrow's weather">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="theme-color" content="#3b82f6">
+  <meta name="theme-color" content="#587091">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap">
+  <link rel="preload" href="/fonts/fredoka-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -26,33 +28,33 @@
       <div id="streak" class="pill" hidden title="Days in a row"></div>
     </header>
 
-    <div id="invite" class="banner" hidden></div>
+    <div id="invite" class="invite card" hidden></div>
 
     <section class="hero">
+      <h1><span id="sky-icon" class="sky-icon" aria-hidden="true">⛅</span> <span id="hero-day">Tomorrow</span></h1>
       <button id="place-button" class="place-button" aria-haspopup="dialog">
         <span aria-hidden="true">📍</span> <span id="place-name">Pick your city</span> <span aria-hidden="true">▾</span>
       </button>
-      <div id="sky-icon" class="sky-icon" aria-hidden="true">⛅</div>
-      <h1 id="hero-title">Tomorrow's weather</h1>
       <p id="hero-sub" class="hero-sub"></p>
     </section>
 
-    <main>
+    <main id="main" hidden>
+      <div id="results-top"></div>
       <div id="questions" class="questions"></div>
       <div id="done" class="card done" hidden></div>
-      <div id="results" class="card" hidden></div>
+      <div id="results-bottom"></div>
 
       <section class="card">
-        <h2 id="board-title">This week</h2>
+        <h2>This week</h2>
         <ol id="leaderboard" class="board"></ol>
       </section>
 
       <section class="card">
         <h2>Leagues</h2>
-        <p class="muted">Start a league with friends, family or the office, and send them the invite link.</p>
         <div id="leagues"></div>
+        <p class="muted small-print">Friends, family, the office group chat: start a league and send them the link.</p>
         <form id="create-league" class="inline">
-          <input name="name" placeholder="League name" maxlength="40" required>
+          <input name="name" placeholder="League name" maxlength="40" required aria-label="League name">
           <button type="submit" class="btn">Create</button>
         </form>
       </section>
@@ -61,9 +63,13 @@
 
       <section class="card how">
         <h2>How it works</h2>
-        <p>Every day there are 3 calls on <strong>tomorrow's</strong> weather where you are. Change your mind as often as you like until midnight.</p>
-        <p><strong>10 pts</strong> for each right call · <strong>+10</strong> if you called it against the forecast · <strong>+5</strong> if a third or fewer of the players agreed with you.</p>
-        <p class="muted">Results land the morning after. Free to play: no money, just bragging rights.</p>
+        <p>3 calls on <strong>tomorrow's</strong> weather. Change your mind until midnight. Results land the next morning.</p>
+        <div class="chips">
+          <span class="chip">+10 <small>right call</small></span>
+          <span class="chip gold">+10 <small>beat the forecast</small></span>
+          <span class="chip">+5 <small>bold call</small></span>
+        </div>
+        <p class="muted small-print">A bold call is a right call that a third or fewer of the players made. Free to play: no money, just bragging rights.</p>
       </section>
     </main>
 
@@ -75,7 +81,7 @@
       <h2>Where are you?</h2>
       <button class="icon-btn" aria-label="Close">✕</button>
     </form>
-    <input id="place-search" type="search" placeholder="Search for your town or city" autocomplete="off">
+    <input id="place-search" type="search" placeholder="Search for your town or city" autocomplete="off" aria-label="Search for your town or city">
     <ul id="place-results" class="place-list"></ul>
   </dialog>
 

@@ -12,7 +12,7 @@ const TICK_MS = 10 * 60 * 1000;
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json',
-  '.webmanifest': 'application/manifest+json',
+  '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 
 export function createApp(game, { limiter = rateLimiter() } = {}) {
@@ -68,7 +68,7 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
     const url = new URL(req.url, 'http://localhost');
     const handler = routes[`${req.method} ${url.pathname}`];
     if (!handler) {
-      return url.pathname.startsWith('/api/') ? send(res, 404, { error: 'Not found' }) : serveStatic(url, res);
+      return url.pathname.startsWith('/api/') ? send(res, 404, { error: 'Not found' }) : serveStatic(url, req, res);
     }
     try {
       const token = parseCookies(req.headers.cookie).session;
@@ -138,15 +138,28 @@ function parseCookies(header = '') {
   return Object.fromEntries(header.split(';').map((p) => p.trim().split('=')).filter(([k]) => k));
 }
 
+// The site's public address. Link previews (WhatsApp, Facebook, X) need
+// absolute URLs, so set PUBLIC_URL in production; otherwise it's worked out
+// from the request.
+function siteOrigin(req) {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/$/, '');
+  const proto = req.headers['x-forwarded-proto']?.split(',')[0] ?? 'http';
+  return `${proto}://${req.headers['x-forwarded-host'] ?? req.headers.host}`;
+}
+
 // Real files are served as-is; any other path without an extension (like an
 // invite link, /join/ABC123) gets the app, which reads the URL itself.
-async function serveStatic(url, res) {
+async function serveStatic(url, req, res) {
   let rel = normalize(decodeURIComponent(url.pathname).slice(1));
   if (rel.startsWith('..')) return send(res, 404, { error: 'Not found' });
   if (!rel || !extname(rel)) rel = 'index.html';
   try {
-    const data = await readFile(join(PUBLIC_DIR, rel));
-    res.writeHead(200, { 'Content-Type': TYPES[extname(rel)] ?? 'application/octet-stream' });
+    let data = await readFile(join(PUBLIC_DIR, rel));
+    if (rel === 'index.html') data = data.toString().replaceAll('{{ORIGIN}}', siteOrigin(req));
+    res.writeHead(200, {
+      'Content-Type': TYPES[extname(rel)] ?? 'application/octet-stream',
+      ...(rel.startsWith('fonts/') && { 'Cache-Control': 'public, max-age=31536000, immutable' }),
+    });
     res.end(data);
   } catch {
     send(res, 404, { error: 'Not found' });

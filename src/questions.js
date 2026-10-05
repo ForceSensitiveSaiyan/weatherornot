@@ -9,7 +9,7 @@ const roundTo = (x, step) => Math.round(x / step) * step;
 
 const KINDS = {
   rain: {
-    emoji: '☔',
+    emoji: '☔\uFE0F',
     title: () => 'Will it rain?',
     detail: () => 'At least 1 mm of rain during the day',
     line: () => 1,
