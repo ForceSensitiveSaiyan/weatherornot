@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { openDb } from '../src/db.js';
 import { createGame, POINTS } from '../src/game.js';
 import { questionsFor, resolveQuestion } from '../src/questions.js';
-import { mockGeocoder } from '../src/places.js';
+import { mockGeocoder, openMeteoGeocoder } from '../src/places.js';
+import { fetchWithRetry } from '../src/weather.js';
 
 const LONDON = 'gn:2643743';
 const mild = { tmax: 17.8, tmin: 9, precip: 3.2, snow: 0, gust: 41, code: 61 };
@@ -46,9 +47,10 @@ test('a full day: pick, lock at local midnight, settle, score with bonuses', asy
   assert.equal(view.round.date, '2026-10-06');
   assert.equal(view.round.number, 6);
   assert.equal(view.round.closesAt, '2026-10-05T23:00:00.000Z');
-  // Forecast: 3.2 mm rain (yes), warmer 17.8 vs 16 (yes), gusts 41 vs line 40 (yes).
+  // Forecast: 3.2 mm rain (yes), warmer 17.8 vs 16 (yes), gusts 41 km/h = 25.5 mph vs line 25 mph (yes).
   const [rain, warmer, wind] = view.round.questions;
-  assert.deepEqual([rain.forecastSays, warmer.forecastSays, wind.key, wind.line], [1, 1, 'wind', 40]);
+  assert.deepEqual([rain.forecastSays, warmer.forecastSays, wind.key, wind.line, wind.unit],
+    [1, 1, 'wind', 25, 'mph']);
 
   const ann = player();
   const ben = player();
@@ -139,8 +141,8 @@ test('leagues: create, preview the invite, join, leave', () => {
 
 test('place search saves results so they can be played', async () => {
   const { game } = setup();
-  const [cape] = await game.searchPlaces('cape');
-  assert.equal(cape.name, 'Cape Town');
+  const [manchester] = await game.searchPlaces('manc');
+  assert.equal(manchester.name, 'Manchester');
   assert.deepEqual(await game.searchPlaces('x'), []);
   await assert.rejects(game.view(null, 'gn:nope'), /Unknown place/);
 });
@@ -152,4 +154,48 @@ test('an old points-betting database is refused with a clear message', (t) => {
   old.exec('CREATE TABLE markets (id INTEGER PRIMARY KEY)');
   old.close();
   assert.throws(() => openDb(path), /older version/);
+});
+
+test('wind is asked in mph with round-number lines', () => {
+  const wind = (gust) => questionsFor({ ...mild, gust }, mild).find((x) => x.key === 'wind');
+  assert.equal(wind(41).line, 25);
+  assert.equal(wind(20).line, 20);       // never below 20 mph
+  assert.equal(wind(72).line, 45);       // 44.7 mph
+  const q = wind(72);
+  const weather = new Map([['2026-10-06', { gust: 80.5 }]]); // 50.0 mph
+  assert.deepEqual(resolveQuestion(q, weather, '2026-10-06'), { answer: 1, observed: 50, line: 45 });
+});
+
+test('UK search results come before same-named places abroad', async () => {
+  const fake = { ok: true, json: async () => ({ results: [
+    { id: 1, name: 'Newport', country_code: 'US', country: 'United States', admin1: 'Rhode Island', latitude: 41.5, longitude: -71.3, timezone: 'America/New_York' },
+    { id: 2, name: 'Newport', country_code: 'GB', country: 'United Kingdom', admin1: 'Wales', latitude: 51.6, longitude: -3, timezone: 'Europe/London' },
+  ] }) };
+  const results = await openMeteoGeocoder({ fetchImpl: async () => fake }).search('Newport');
+  assert.deepEqual(results.map((r) => r.country), ['Wales', 'Rhode Island, United States']);
+});
+
+test('weather fetches retry dropped connections, and give up with a friendly error', async () => {
+  let calls = 0;
+  const flaky = async () => {
+    calls++;
+    if (calls < 3) throw new Error('connect timeout');
+    return { ok: true, status: 200 };
+  };
+  assert.equal((await fetchWithRetry('x', { fetchImpl: flaky, delayMs: 1 })).status, 200);
+  assert.equal(calls, 3);
+
+  const down = createGame({
+    db: openDb(), provider: { daily: async () => { throw new Error('down'); } }, geocoder: mockGeocoder(),
+  });
+  await assert.rejects(down.view(null, LONDON), /Couldn't reach the weather service/);
+});
+
+test('a short rate limit (429) is retried; a bad request is not', async () => {
+  const statuses = [429, 200];
+  const res = await fetchWithRetry('x', { fetchImpl: async () => ({ ok: statuses[0] === 200, status: statuses.shift() }), delayMs: 1 });
+  assert.equal(res.status, 200);
+  let calls = 0;
+  await fetchWithRetry('x', { fetchImpl: async () => (calls++, { ok: false, status: 400 }), delayMs: 1 });
+  assert.equal(calls, 1);
 });

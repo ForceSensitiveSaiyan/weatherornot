@@ -98,7 +98,7 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
 
   function validateCredentials(name, password) {
     name = String(name ?? '').trim();
-    if (!/^[A-Za-z0-9_-]{3,20}$/.test(name)) throw new GameError('Name must be 3–20 letters, numbers, _ or -');
+    if (!/^[A-Za-z0-9_-]{3,20}$/.test(name)) throw new GameError('Names need 3 to 20 letters, numbers, _ or -');
     if (String(password ?? '').length < 6) throw new GameError('Password must be at least 6 characters');
     return name;
   }
@@ -139,7 +139,13 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
   async function searchPlaces(query) {
     query = String(query ?? '').trim();
     if (query.length < 2) return [];
-    const results = await geocoder.search(query.slice(0, 60));
+    let results;
+    try {
+      results = await geocoder.search(query.slice(0, 60));
+    } catch (err) {
+      console.error('Place search failed:', err.message);
+      throw new GameError("Search isn't working right now. Try again in a moment.", 503);
+    }
     results.forEach(savePlace);
     return results.map(publicPlace);
   }
@@ -161,7 +167,13 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
     const date = addDays(today, 1);
     const existing = q.roundFor.get(place.id, date);
     if (existing) return existing;
-    const weather = await provider.daily(place);
+    let weather;
+    try {
+      weather = await provider.daily(place);
+    } catch (err) {
+      console.error('Forecast fetch failed:', err.message);
+      throw new GameError("Couldn't reach the weather service. Try again in a moment.", 503);
+    }
     const tomorrow = weather.get(date);
     const todayWeather = weather.get(today);
     if (!tomorrow || !todayWeather) throw new GameError('No forecast available for this place yet', 503);
@@ -299,7 +311,7 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
 
   function createLeague(userId, name) {
     name = String(name ?? '').trim();
-    if (name.length < 1 || name.length > 40) throw new GameError('League name must be 1–40 characters');
+    if (name.length < 1 || name.length > 40) throw new GameError('League names can be up to 40 characters');
     return transaction(db, () => {
       let code;
       do {

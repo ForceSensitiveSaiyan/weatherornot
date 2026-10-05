@@ -37,24 +37,21 @@ function skyFor(code) {
   return ['rain', '🌧️'];
 }
 
-// One temperature unit, picked from the player's region.
-const FAHRENHEIT_REGIONS = ['US', 'LR', 'MM', 'BS', 'BZ', 'KY', 'PW', 'FM', 'MH'];
-const useF = (() => {
-  try { return FAHRENHEIT_REGIONS.includes(new Intl.Locale(navigator.language).maximize().region); } catch { return false; }
-})();
-const fmtTemp = (c) => (useF ? `${Math.round(c * 9 / 5 + 32)}°F` : `${Math.round(c * 10) / 10}°C`);
+// Launching in the UK: Celsius, mph for wind (set by the server) and UK dates.
+const LOCALE = 'en-GB';
+const fmtTemp = (c) => `${Math.round(c * 10) / 10}°C`;
 function fmt(value, unit) {
-  if (value == null) return '–';
+  if (value == null) return '?';
   return unit === '°C' ? fmtTemp(value) : `${Math.round(value * 10) / 10} ${unit}`;
 }
-const fmtDay = (date, opts) => new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { ...opts, timeZone: 'UTC' });
+const fmtDay = (date, opts) => new Date(`${date}T12:00:00Z`).toLocaleDateString(LOCALE, { ...opts, timeZone: 'UTC' });
 
 // Titles and details with a bit of personality; the server's are the fallback.
 const COPY = {
-  rain: { detail: 'At least 1 mm. A light drizzle won\'t count.' },
+  rain: { detail: 'Brolly needed? At least 1 mm. Drizzle doesn\'t count.' },
   warmer: { detail: 'Tomorrow\'s high vs today\'s high' },
-  snow: { detail: 'At least 0.5 cm of the white stuff' },
-  heat: { title: (q) => `Will it hit ${fmtTemp(q.line)}?`, detail: 'The hottest point of the day' },
+  snow: { detail: 'At least 0.5 cm settling. Sledges at the ready.' },
+  heat: { detail: 'Proper scorcher territory' },
   wind: { detail: 'The strongest gust of the day' },
 };
 const titleOf = (q) => COPY[q.key]?.title?.(q) ?? q.title;
@@ -145,8 +142,8 @@ function renderDone() {
   if (el.hidden) return;
   const bold = round.questions.filter((q) => q.myPick !== q.forecastSays).length;
   el.innerHTML = `<div class="big">Locked in. Now we wait 🍿</div>
-    <p class="muted">${bold ? `You went against the forecast ${bold === 1 ? 'once' : `${bold} times`}. Brave. ` : ''}Change your mind any time before midnight in ${esc(place.name)}.</p>
-    <div class="btn-row"><button class="btn" data-action="challenge">Challenge a friend</button></div>`;
+    <p class="muted">${bold ? `You went against the forecast ${bold === 1 ? 'once' : `${bold} times`}. Bold. ` : ''}You can change your mind until midnight in ${esc(place.name)}.</p>
+    <div class="btn-row"><button class="btn" data-action="challenge">Challenge a mate</button></div>`;
 }
 
 function resultHeadline(r) {
@@ -401,14 +398,14 @@ function listPlaces(places, label) {
 
 function openPicker(query = '') {
   $('#place-search').value = query;
-  if (query) search(query); else listPlaces(state.popular, 'Popular');
+  if (query) search(query); else listPlaces(state.popular, 'Popular in the UK');
   $('#place-dialog').showModal();
   $('#place-search').focus();
 }
 
 async function search(query) {
   const token = (search.token = Symbol());
-  if (query.trim().length < 2) return listPlaces(state.popular, 'Popular');
+  if (query.trim().length < 2) return listPlaces(state.popular, 'Popular in the UK');
   try {
     const { places } = await api(`/api/places/search?q=${encodeURIComponent(query)}`);
     if (token === search.token) listPlaces(places);
@@ -423,10 +420,15 @@ $('#place-search').addEventListener('input', (e) => {
   search.timer = setTimeout(() => search(e.target.value), 250);
 });
 
-// First visit: guess the city from the device's time zone.
+// First visit: guess the city from the device's time zone where that's
+// unambiguous. The whole UK shares Europe/London, so UK visitors get the
+// UK city list to pick from instead of being dropped into London.
 function guessPlace() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
-  return { match: state.popular.find((p) => p.tz === tz), hint: tz.split('/').pop()?.replace(/_/g, ' ') };
+  const matches = state.popular.filter((p) => p.tz === tz);
+  if (matches.length === 1) return { match: matches[0] };
+  if (matches.length > 1) return { hint: '' };
+  return { hint: tz.split('/').pop()?.replace(/_/g, ' ') ?? '' };
 }
 
 // ---- invite links --------------------------------------------------------

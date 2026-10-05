@@ -4,7 +4,7 @@
 // players who beat the forecast can be rewarded.
 import { addDays } from './time.js';
 
-const f = (c) => Math.round(c * 9 / 5 + 32);
+const KMH_PER_MPH = 1.609344;
 const roundTo = (x, step) => Math.round(x / step) * step;
 
 const KINDS = {
@@ -39,21 +39,22 @@ const KINDS = {
   },
   heat: {
     emoji: '🥵',
-    title: (line) => `Will it hit ${line}°C (${f(line)}°F)?`,
+    title: (line) => `Will it hit ${line}°C?`,
     detail: () => 'Highest temperature of the day',
     line: (tomorrow) => Math.max(25, roundTo(tomorrow.tmax, 5)),
     observe: (day) => day?.tmax,
     yes: (value, line) => value >= line,
     unit: '°C',
   },
+  // Wind in mph, as UK forecasts give it. Providers report km/h.
   wind: {
     emoji: '💨',
-    title: (line) => `Gusts over ${line} km/h?`,
+    title: (line) => `Gusts over ${line} mph?`,
     detail: () => 'Strongest wind gust of the day',
-    line: (tomorrow) => Math.max(30, roundTo(tomorrow.gust, 10)),
-    observe: (day) => day?.gust,
+    line: (tomorrow) => Math.max(20, roundTo(tomorrow.gust / KMH_PER_MPH, 5)),
+    observe: (day) => (day?.gust == null ? day?.gust : Math.round((day.gust / KMH_PER_MPH) * 10) / 10),
     yes: (value, line) => value > line,
-    unit: 'km/h',
+    unit: 'mph',
   },
 };
 

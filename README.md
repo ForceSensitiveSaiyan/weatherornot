@@ -1,14 +1,16 @@
 # ☁️ WeatherOrNot
 
-A free daily game: make 3 calls on **tomorrow's** weather where you live, keep your streak going, and beat your friends. No money involved.
+A free daily game. Make 3 calls on **tomorrow's** weather where you live, keep your streak going and beat your mates. No money involved.
+
+**Launching in the UK.** Temperatures are in °C, wind in mph, dates in UK format, the popular list is 14 UK cities and UK places come first in search. Anywhere in the world can still be played.
 
 ## How it plays
 
-- **Your city.** Search any town or city. On a first visit the app guesses your city from your device's time zone.
+- **Your city.** Search any town or city. On a first visit, UK players pick from the popular UK cities (the whole UK shares one time zone, so there's no way to guess). Elsewhere, the app guesses from the device's time zone.
 - **3 calls a day.** Every place gets the same three yes/no questions about tomorrow:
   - ☔ *Will it rain?* (at least 1 mm)
   - 🌡️ *Warmer than today?* (judged against today's *actual* high)
-  - A wildcard picked from the forecast: ❄️ *Will it snow?* when it's cold, 🥵 *Will it hit 30°C?* when it's hot, otherwise 💨 *Gusts over 40 km/h?* (lines are set from the forecast)
+  - A wildcard picked from the forecast: ❄️ *Will it snow?* when it's cold, 🥵 *Will it hit 30°C?* when it's hot, otherwise 💨 *Gusts over 30 mph?* (lines are set from the forecast, in round numbers)
 - **No signup to play.** Your first tap makes a guest account (e.g. *BreezyOtter42*). Save it with a name and password to play on other devices.
 - **Locks at local midnight.** You can change your calls until then. Results come in once the day is over.
 - **Scoring.** 10 points per right call, **+10** if you called it against the forecast, **+5** if a third or fewer of the players agreed with you.
@@ -59,3 +61,4 @@ test/             node:test suites
 - **No password reset yet.** Saved accounts are name + password only.
 - **No push notifications yet.** Players have to come back to see results; a morning "You called it ☔ 3/3" notification is the next big retention feature.
 - **A single SQLite file** comfortably handles thousands of players. Back it up.
+- **Open-Meteo rate limits.** The free API allows about 10,000 calls a day. The app only fetches a forecast the first time a place is opened each day and once more to settle it, and it retries short outages and rate limits. Results are cached in the database.

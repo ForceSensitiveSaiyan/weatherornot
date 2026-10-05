@@ -10,6 +10,21 @@ const FIELDS = {
   code: 'weather_code',
 };
 
+// Weather APIs have the odd slow or dropped connection, server error or
+// short rate limit (429); try a few times with a timeout before giving up.
+export async function fetchWithRetry(url, { fetchImpl = fetch, attempts = 3, timeoutMs = 8000, delayMs = 700 } = {}) {
+  for (let i = 1; ; i++) {
+    try {
+      const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+      const retryable = res.status === 429 || res.status >= 500;
+      if (!retryable || i >= attempts) return res;
+    } catch (err) {
+      if (i >= attempts) throw err;
+    }
+    await new Promise((r) => setTimeout(r, delayMs * i));
+  }
+}
+
 export function openMeteoProvider({ fetchImpl = fetch } = {}) {
   return {
     name: 'open-meteo',
@@ -23,7 +38,7 @@ export function openMeteoProvider({ fetchImpl = fetch } = {}) {
         past_days: '3',
         forecast_days: '3',
       });
-      const res = await fetchImpl(url);
+      const res = await fetchWithRetry(url, { fetchImpl });
       if (!res.ok) throw new Error(`Open-Meteo ${res.status} for ${place.id}`);
       const { daily } = await res.json();
       const out = new Map();
