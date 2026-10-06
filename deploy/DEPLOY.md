@@ -60,6 +60,7 @@ In this repository on GitHub, go to **Settings → Secrets and variables → Act
 | `VPS_SSH_KEY` | same as in reactor-panic |
 | `VPS_PORT` | same as in reactor-panic (the SSH port) |
 | `WEATHERORNOT_ADMIN_TOKEN` | a new long random value: run `openssl rand -hex 32` and keep it in your password manager. It's the password for `/admin.html`. |
+| `WEATHERORNOT_VAPID_PUBLIC_KEY` and `WEATHERORNOT_VAPID_PRIVATE_KEY` | for morning notifications. On your own machine, in this repository, run `npm run vapid-keys` and paste in the two values. Keep them in your password manager: new keys turn everyone's notifications off. Leave both out and the game simply doesn't offer notifications. |
 | `METOFFICE_API_KEY` | leave this out until the Met Office account exists |
 
 GitHub won't show you a secret's value again once it's saved. So copy the four `VPS_*` values from wherever you keep the originals, not from reactor-panic's settings page.

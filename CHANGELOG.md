@@ -4,6 +4,16 @@ What changed, newest first. Not live yet: the first public version will be 1.0.0
 
 ## Unreleased
 
+### 6 October 2026: morning notifications
+
+- **"You called it. 3/3 in Douglas"** arrives as a notification once your result is in, never before 7.30am. Underneath is what the station measured and how you did against the forecast. Tapping it opens the game with the result at the top.
+- **Turning it on:** "Tell me my results in the morning" under "That's your three.", or in your account card, where you can also turn it off. On an iPhone it needs the game added to the Home Screen first, and the game says so.
+- **Logging out turns notifications off** on that phone, so the next person doesn't get your results. Logging in moves the phone's notifications to your account.
+- **Built without new dependencies:** the encryption is checked against the worked example in the Web Push standard. The server only sends to Apple's, Google's, Mozilla's and Microsoft's push services.
+- **To switch it on,** add two new GitHub secrets made with `npm run vapid-keys` (see `deploy/DEPLOY.md`). Without them the game works as before, with no notifications.
+- **Admin stats** now count players with notifications on, and visits from a notification each day.
+- **The privacy notice** says what's kept for notifications.
+
 ### 6 October 2026: second review, simpler and more its own
 
 A designer and a tester reviewed it for simplicity, personality and anything that felt generic. Everything they raised is done except the "later" design ideas in `ROADMAP.md`.

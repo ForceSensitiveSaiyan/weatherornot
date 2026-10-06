@@ -45,7 +45,7 @@ test('stats: players by day, new players, who came back, and anonymous counts', 
   assert.deepEqual(days.map((d) => d.date), ['2026-10-06', '2026-10-05', '2026-10-04']);
   assert.deepEqual(days[0], {
     date: '2026-10-06', players: 2, newPlayers: 1, cameBack: 1, playedDayBefore: 2,
-    visits: 2, intros: 0, shares: 0, sharedOpens: 0,
+    visits: 2, intros: 0, shares: 0, sharedOpens: 0, pushOpens: 0,
   });
   assert.deepEqual([days[1].players, days[1].newPlayers, days[1].visits, days[1].shares], [2, 2, 1, 1]);
   assert.equal(totals.players, 3);

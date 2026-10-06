@@ -57,6 +57,8 @@ npm test
 | `TRUST_PROXY` | `0` | How many proxies sit in front of the app (usually `1` on a host). Without it, every player looks like the same visitor to the rate limits. Leave at `0` if the app faces the internet directly. |
 | `BACKUP_DIR` | `backups` next to the database | Where the daily database copies go. `off` turns them off. |
 | `BACKUP_KEEP` | `14` | How many daily copies to keep. |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | unset | Turn on morning notifications. Make a pair with `npm run vapid-keys`. Changing them turns everyone's notifications off. |
+| `VAPID_SUBJECT` | `mailto:hello@aidoo.biz` | Who push services contact if something goes wrong. |
 
 ## Hosting
 
@@ -65,6 +67,7 @@ Runs at https://playweatherornot.co.uk on the ai.doo Hetzner VPS (once the one-o
 What runs by itself:
 
 - **Settlement** every 10 minutes, once each day's station reports are in.
+- **Morning notifications** (with the VAPID keys set): each player's result goes to the phones where they turned notifications on, once it's settled and not before 7.30am.
 - **Backups** once a day: a full copy of the database in `/opt/weatherornot/data/backups`, kept for 14 days. These sit on the same disk, so also use Hetzner's server backups or copy them elsewhere.
 - **Clean restarts:** on a deploy the app finishes its requests and closes the database before stopping.
 

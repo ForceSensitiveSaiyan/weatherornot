@@ -2,7 +2,8 @@ name: Deploy to VPS
 
 # Same setup as the game scoreboards: copy the code to the VPS and rebuild the
 # container. The tests must pass first. Needs these repository secrets:
-# VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_PORT, WEATHERORNOT_ADMIN_TOKEN
+# VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_PORT, WEATHERORNOT_ADMIN_TOKEN,
+# WEATHERORNOT_VAPID_PUBLIC_KEY, WEATHERORNOT_VAPID_PRIVATE_KEY
 # (and METOFFICE_API_KEY once that account exists).
 
 on:
@@ -45,6 +46,8 @@ jobs:
             PUBLIC_URL=https://playweatherornot.co.uk
             ADMIN_TOKEN=${{ secrets.WEATHERORNOT_ADMIN_TOKEN }}
             METOFFICE_API_KEY=${{ secrets.METOFFICE_API_KEY }}
+            VAPID_PUBLIC_KEY=${{ secrets.WEATHERORNOT_VAPID_PUBLIC_KEY }}
+            VAPID_PRIVATE_KEY=${{ secrets.WEATHERORNOT_VAPID_PRIVATE_KEY }}
             EOF
 
       # The code goes into a fresh release folder each time, so deleted files

@@ -12,6 +12,7 @@ export const EVENTS = new Set([
   'share-league',     // shared a league invite or table
   'open-shared',      // opened a friend's shared result link
   'open-invite',      // opened a league invite link
+  'open-push',        // opened the game from a morning notification
 ]);
 
 const TZ = 'Europe/London';
@@ -69,13 +70,15 @@ export function createStats(db, { now = () => new Date() } = {}) {
         intros: c.intro ?? 0,
         shares: (c['share-result'] ?? 0) + (c['share-challenge'] ?? 0) + (c['share-league'] ?? 0),
         sharedOpens: (c['open-shared'] ?? 0) + (c['open-invite'] ?? 0),
+        pushOpens: c['open-push'] ?? 0,
       });
     }
     const totals = db.prepare(`SELECT
       (SELECT COUNT(DISTINCT user_id) FROM picks) AS players,
       (SELECT COUNT(*) FROM users WHERE pass_hash IS NOT NULL) AS savedAccounts,
       (SELECT COUNT(*) FROM leagues) AS leagues,
-      (SELECT COUNT(*) FROM league_members) AS leagueMembers`).get();
+      (SELECT COUNT(*) FROM league_members) AS leagueMembers,
+      (SELECT COUNT(DISTINCT user_id) FROM push_subs) AS notificationsOn`).get();
     return { days: rows, totals: { ...totals } };
   }
 

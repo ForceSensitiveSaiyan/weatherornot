@@ -9,6 +9,8 @@ import { openMeteoProvider, mockProvider } from './weather.js';
 import { openMeteoGeocoder, mockGeocoder } from './places.js';
 import { synopObserver } from './observations.js';
 import { createStats } from './stats.js';
+import { webPush } from './push.js';
+import { createNotifier } from './notify.js';
 import { backupDaily } from './backup.js';
 import { localDate } from './time.js';
 import { weatherLine, sourceName, shortDay } from '../public/words.js';
@@ -21,13 +23,24 @@ const TYPES = {
   '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 
-export function createApp(game, { limiter = rateLimiter(), stats = null } = {}) {
+export function createApp(game, { limiter = rateLimiter(), stats = null, notifier = null } = {}) {
   // Routes get { user, body, query, ip, setToken }. Calling ensureUser() makes
   // a guest account on the spot, so nobody has to sign up before playing.
   const routes = {
     // For the host's health checks.
     'GET /healthz': () => (stats?.ping(), { ok: true }),
-    'GET /api/me': ({ user }) => ({ user, stats: user ? game.stats(user.id) : null }),
+    'GET /api/me': ({ user }) => ({ user, stats: user ? game.stats(user.id) : null, pushKey: notifier?.publicKey ?? null }),
+    // Morning results on this device. A device follows whoever last turned it on.
+    'POST /api/push/subscribe': (ctx) => {
+      if (!notifier?.publicKey) throw new GameError('Notifications are off on this server.', 404);
+      limiter(ctx.ip, 'push', 30);
+      notifier.subscribe(requireUser(ctx.user).id, ctx.body.subscription);
+      return { ok: true };
+    },
+    'POST /api/push/unsubscribe': (ctx) => {
+      notifier?.unsubscribe(ctx.body.endpoint);
+      return { ok: true };
+    },
     'GET /api/places/popular': () => ({ places: game.popularPlaces() }),
     'GET /api/places/search': async ({ query, ip }) => {
       limiter(ip, 'search', 60);
@@ -334,6 +347,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dbPath = process.env.DB_PATH ?? 'weatherornot.db';
   const db = openDb(dbPath);
   const stats = createStats(db);
+  const notifier = createNotifier({ db, push: webPush() });
   const game = createGame({
     db,
     provider,
@@ -356,13 +370,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     backup();
     return game.tick()
       .then((n) => n && console.log(`Settled ${n} game(s)`))
-      .catch((err) => console.error('Tick failed:', err.message));
+      .catch((err) => console.error('Tick failed:', err.message))
+      .then(() => notifier.morning())
+      .then((n) => n && console.log(`Sent ${n} morning notification(s)`))
+      .catch((err) => console.error('Notifications failed:', err.message));
   };
   tick();
   const timer = setInterval(tick, TICK_MS);
   const port = Number(process.env.PORT ?? 3000);
-  const server = createServer(createApp(game, { stats })).listen(port, () => {
-    console.log(`WeatherOrNot running at http://localhost:${port} (weather: ${provider.name})`);
+  const server = createServer(createApp(game, { stats, notifier })).listen(port, () => {
+    console.log(`WeatherOrNot running at http://localhost:${port} (weather: ${provider.name}, notifications: ${notifier.publicKey ? 'on' : 'off'})`);
   });
   // Hosts send SIGTERM before a restart or deploy: finish requests, close the database cleanly.
   for (const signal of ['SIGTERM', 'SIGINT']) {

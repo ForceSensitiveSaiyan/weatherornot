@@ -242,13 +242,18 @@ function renderDone() {
     : friend.settled ? `${esc(friend.name)} got ${friend.got} of ${friend.of} in ${esc(friend.town)} on ${weekday(friend.date)}. Start a league and you'll see who's ahead every week.`
       : `You and ${esc(friend.name)} find out on ${resultsDay(friend.date)} morning. Start a league to keep score every week.`;
   const leagueDone = friend && store.get(`friendLeague:${friend.code}`);
+  const pushLine = {
+    off: '<button class="linkish" data-action="push-on">Tell me my results in the morning</button>',
+    install: '<p class="small-print muted">On an iPhone, add WeatherOrNot to your Home Screen (Share, then Add to Home Screen) and we can tell you your results in the morning.</p>',
+  }[state.push] ?? '';
   el.innerHTML = `<div class="big">That's your three.</div>
-    <p class="muted">Results on ${resultsDay(round.date)} morning. You can change your answers until midnight in ${esc(place.name)}.</p>
+    <p class="muted">Results on ${resultsDay(round.date)} morning${state.push === 'on' ? ", and we'll send you a notification" : ''}. You can change your answers until midnight in ${esc(place.name)}.</p>
     ${friend && !leagueDone ? `<p>${friendLine}</p>` : ''}
     <div class="btn-row">
       ${friend && !leagueDone ? `<button class="btn" data-action="friend-league">Start a league with ${esc(friend.name)}</button>` : ''}
       <button class="btn ${friend && !leagueDone ? 'secondary' : ''}" data-action="challenge">Send to the group chat</button>
-    </div>`;
+    </div>
+    ${pushLine}`;
 }
 
 // "It hit 18.1°C." in words that fit each question.
@@ -396,13 +401,18 @@ function renderAccount() {
       </form><p class="error"></p>`
     : `<div class="account-row"><p>Playing as <strong>${esc(user.name)}</strong></p>
     <button class="linkish small-print" data-action="change-name">Change name</button></div>`;
+  const pushRow = {
+    on: '<div class="account-row"><p class="small-print">Morning notifications: on</p><button class="linkish small-print" data-action="push-off">Turn off</button></div>',
+    off: '<div class="account-row"><p class="small-print">Morning notifications: off</p><button class="linkish small-print" data-action="push-on">Turn on</button></div>',
+    denied: '<p class="small-print muted">Notifications are blocked for this site. You can allow them in your browser settings.</p>',
+  }[state.push] ?? '';
   if (!user.guest) {
-    el.innerHTML = `${versus}${nameRow}
+    el.innerHTML = `${versus}${nameRow}${pushRow}
       <div class="account-row"><p class="muted small-print">Logged in as ${esc(user.account)} · ${stats.points} pts · ${stats.played} ${stats.played === 1 ? 'game' : 'games'}</p>
       <button class="linkish small-print" data-action="logout">Log out</button></div>`;
     return;
   }
-  el.innerHTML = `${versus}${nameRow}
+  el.innerHTML = `${versus}${nameRow}${pushRow}
     ${mode === 'save'
       ? `<form id="account-form" class="stack">
           <p class="muted small-print" style="margin:0">Pick a login name and password to play on another phone and keep your streak.</p>
@@ -412,6 +422,69 @@ function renderAccount() {
           <p class="error"></p>
         </form>`
       : '<button class="linkish small-print" data-action="open-save">Play on another phone</button>'}`;
+}
+
+// ---- morning notifications -------------------------------------------------
+
+// 'on', 'off', 'denied', 'install' (an iPhone that needs the home-screen app
+// first) or null (not offered: no server key, or a browser without push).
+async function pushState() {
+  if (!state.pushKey) return null;
+  if (!('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window)) {
+    const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    return iphone && !navigator.standalone ? 'install' : null;
+  }
+  if (Notification.permission === 'denied') return 'denied';
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    return (await reg?.pushManager.getSubscription()) ? 'on' : 'off';
+  } catch {
+    return null;
+  }
+}
+
+const keyBytes = (b64u) => Uint8Array.from(atob(b64u.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+
+async function turnOnPush() {
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    state.push = permission === 'denied' ? 'denied' : 'off';
+    return toast(permission === 'denied' ? 'Notifications are blocked. You can allow them in your browser settings.' : 'No problem.');
+  }
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.ready;
+  const key = keyBytes(state.pushKey);
+  let sub;
+  try {
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  } catch {
+    // Subscribed before with a different key: start again.
+    await (await reg.pushManager.getSubscription())?.unsubscribe();
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  }
+  await api('/api/push/subscribe', { subscription: sub.toJSON() });
+  state.push = 'on';
+  toast("Done. We'll tell you how you did in the morning.");
+}
+
+async function turnOffPush() {
+  const reg = await navigator.serviceWorker?.getRegistration();
+  const sub = await reg?.pushManager.getSubscription();
+  if (sub) {
+    await api('/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
+    await sub.unsubscribe();
+  }
+  state.push = await pushState();
+}
+
+// The device's notifications go to whoever plays on it now (after logging
+// in, say), so tell the server once per visit.
+async function syncPush() {
+  state.push = await pushState();
+  if (state.push !== 'on' || !state.user || syncPush.done) return;
+  syncPush.done = true;
+  const sub = await (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription();
+  if (sub) api('/api/push/subscribe', { subscription: sub.toJSON() }).catch(() => {});
 }
 
 // ---- sharing -------------------------------------------------------------
@@ -493,8 +566,9 @@ async function loadGame() {
 }
 
 async function loadAll() {
-  const [{ user, stats }, { leagues }] = await Promise.all([api('/api/me'), api('/api/leagues')]);
-  Object.assign(state, { user, stats, leagues });
+  const [{ user, stats, pushKey }, { leagues }] = await Promise.all([api('/api/me'), api('/api/leagues')]);
+  Object.assign(state, { user, stats, leagues, pushKey });
+  await syncPush();
   await loadGame();
 }
 
@@ -594,7 +668,20 @@ const actions = {
     await api('/api/leagues/leave', { leagueId: Number(league.dataset.id) });
     loadAll();
   },
+  async 'push-on'() {
+    await turnOnPush();
+    renderDone();
+    renderAccount();
+  },
+  async 'push-off'() {
+    await turnOffPush();
+    toast('Notifications off.');
+    renderDone();
+    renderAccount();
+  },
   async logout() {
+    // The next person on this phone shouldn't get your results.
+    await turnOffPush().catch(() => {});
     await api('/api/logout', {});
     loadAll();
   },
@@ -691,6 +778,7 @@ document.addEventListener('submit', async (e) => {
       const result = await api('/api/login', { name: data.get('name'), password: data.get('password') });
       $('#login-dialog').close();
       toast(result.moved ? 'Logged in. Your answers from this phone came with you.' : 'Logged in.');
+      syncPush.done = false; // this phone's notifications move to the account
       const me = await api('/api/me');
       // A new phone: carry on where they last played.
       if (!state.placeId && me.stats?.lastPlace) {
@@ -951,6 +1039,10 @@ document.addEventListener('keydown', (e) => {
   const guess = guessPlace();
   hit('visit');
   if (location.pathname.startsWith('/join/')) hit('open-invite');
+  if (new URLSearchParams(location.search).get('from') === 'push') {
+    hit('open-push');
+    history.replaceState(null, '', '/');
+  }
   const friend = await readFriendLink();
   state.friend = friend ?? recentFriend();
   const me = await api('/api/me');

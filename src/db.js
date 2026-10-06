@@ -103,6 +103,21 @@ export function openDb(path = ':memory:') {
       joined_at  TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (league_id, user_id)
     );
+    -- Browsers that get morning notifications, and whose they are.
+    CREATE TABLE IF NOT EXISTS push_subs (
+      endpoint   TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      p256dh     TEXT NOT NULL,
+      auth       TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS push_subs_user ON push_subs(user_id);
+    -- Results already sent, so each one goes once.
+    CREATE TABLE IF NOT EXISTS push_sent (
+      round_id   INTEGER NOT NULL REFERENCES rounds(id),
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      PRIMARY KEY (round_id, user_id)
+    );
   `);
   // Added after the first databases were made.
   if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'display')) {
