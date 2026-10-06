@@ -204,6 +204,20 @@ dialog::backdrop { background: rgb(10 20 40 / .5); }
   background: #17202c; color: #fff; padding: 12px 18px; border-radius: 14px; transition: all .25s;
   max-width: calc(100vw - 32px); z-index: 10; font-weight: 500; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* "All done" bar: fixed to the bottom once all three are answered. */
+.locked-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
+  max-width: 520px; margin: 0 auto; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--card); color: var(--text); border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 20px rgb(0 0 0 / .12); border-radius: 16px 16px 0 0; animation: rise .3s ease-out both; }
+.locked-bar[hidden] { display: none; }
+.locked-bar p { flex: 1; min-width: 0; margin: 0; line-height: 1.3; }
+.locked-bar strong { font-family: var(--font-display); font-weight: 600; display: block; }
+.locked-bar .bar-text { font-size: .8125rem; color: var(--muted); }
+.locked-bar .bar-btns { display: flex; gap: 8px; flex: none; }
+body.has-bar .app { padding-bottom: 96px; }
+body.has-bar .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
+@media (max-width: 359px) { .locked-bar .bar-btns .secondary { display: none; } }
+
 /* The morning reveal: questions in one at a time, points stamped on as each
    reading lands, then the verdict and Share. */
 .results.revealing .result-list li { animation: rise .45s ease-out var(--d) both; }

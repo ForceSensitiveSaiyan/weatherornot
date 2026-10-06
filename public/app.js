@@ -142,6 +142,7 @@ function render() {
   renderQuestions();
   renderNameCard();
   renderDone();
+  renderBar();
   renderResults();
   renderTownBoard();
   renderLeagues();
@@ -158,6 +159,8 @@ function renderCountdown() {
   }
   const day = `Tomorrow, ${fmtDay(round.date, { day: 'numeric', month: 'short' })}`;
   const dots = round.questions.map((q) => `<i class="${q.myPick != null ? 'on' : ''}"></i>`).join('');
+  const barText = $('#locked-bar .bar-text');
+  if (barText) barText.textContent = left === 'locked' ? 'Answers closed' : `Closes in ${left}`;
   $('#hero-sub').innerHTML = left === 'locked'
     ? `${day} · answers closed`
     : `${day} · <span class="nowrap">closes in ${left} <span class="dots" role="img" aria-label="${picksMade()} of 3 answered" title="${picksMade()} of 3 answered">${dots}</span></span>`;
@@ -256,6 +259,39 @@ function renderDone() {
     ${pushLine}`;
 }
 
+// Once all three are in, a bar at the bottom keeps Challenge (and Share, if
+// there's a result) in reach. It steps aside while the "That's your three."
+// card is on screen, and while typing.
+function renderBar() {
+  const el = $('#locked-bar');
+  const game = state.game;
+  const show = !!game && picksMade() === game.round.questions.length && !state.doneInView && !state.typing && $('#intro').hidden;
+  el.hidden = !show;
+  document.body.classList.toggle('has-bar', show);
+  if (!show) return;
+  const left = untilText(game.round.closesAt);
+  el.innerHTML = `<p><strong>All done</strong> <span class="bar-text">${left === 'locked' ? 'Answers closed' : `Closes in ${left}`}</span></p>
+    <div class="bar-btns">
+      ${game.lastRound?.score && !state.resultsInView ? '<button class="btn small secondary" data-action="share">Share result</button>' : ''}
+      <button class="btn small" data-action="challenge">Challenge</button>
+    </div>`;
+}
+
+// Whether the done card or the results card (with its own Share) is on screen.
+const onScreen = new IntersectionObserver((entries) => {
+  for (const e of entries) state[e.target.id === 'done' ? 'doneInView' : 'resultsInView'] = e.isIntersecting;
+  if (state.game) renderBar();
+});
+onScreen.observe($('#done'));
+for (const type of ['focusin', 'focusout']) {
+  document.addEventListener(type, (e) => {
+    const typing = type === 'focusin' && e.target.matches('input, textarea');
+    if (typing === !!state.typing) return;
+    state.typing = typing;
+    if (state.game) renderBar();
+  });
+}
+
 // "It hit 18.1°C." in words that fit each question.
 function outcomeText(q) {
   const v = fmt(q.result.observed, q.unit);
@@ -300,6 +336,7 @@ function renderResults() {
   const last = state.game.lastRound;
   const el = $('#results') ?? Object.assign(document.createElement('section'), { id: 'results', className: 'card results' });
   (state.resultsFirst ? $('#results-top') : $('#results-bottom')).append(el);
+  onScreen.observe(el);
   // New players don't need yesterday's results for a game they never played.
   el.hidden = !last || (!last.score && !state.stats?.played);
   // Results above the header push it down onto the paler part of the sky.
@@ -663,6 +700,7 @@ $('#questions').addEventListener('click', async (e) => {
     card.querySelector('.crowd').outerHTML = crowdLine(round.questions.find((q) => q.key === key));
     renderCountdown();
     renderDone();
+    renderBar();
     renderNameCard();
     $('#streak').hidden = !stats.streak;
     $('#streak').textContent = `🔥 ${stats.streak}`;

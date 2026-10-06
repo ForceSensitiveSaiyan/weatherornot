@@ -4,6 +4,10 @@ What changed, newest first. Not live yet: the first public version will be 1.0.0
 
 ## Unreleased
 
+### 6 October 2026: "All done" bar
+
+- **Once your three are in,** a bar at the bottom of the screen says "All done" with the time left, plus Challenge (and Share result when there's one to share). It steps aside while "That's your three." or the results card is on screen, and while you're typing.
+
 ### 6 October 2026: the morning reveal
 
 - **Your results arrive one question at a time** the first time you see them: each reading slides onto its dial, the tick or cross lands, the score counts up, then the points. After that comes the line on how you did against the forecast, and the Share button gives a nudge.
