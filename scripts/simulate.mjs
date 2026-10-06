@@ -6,6 +6,11 @@
 //   npm run simulate -- --real       real UK forecasts vs outcomes from
 //                                    Open-Meteo's previous-runs API
 //                                    (cached in scripts/sim-data/)
+//   npm run simulate -- --real --station
+//                                    the same, but settled on the nearest
+//                                    weather station's reports (OGIMET SYNOP)
+//                                    instead of the model, and prints the
+//                                    rain odds and biases measured that way
 //   --skill=<local>,<nerd>           how much better than the forecast the
 //                                    "edge" players are (default 0.08,0.15)
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -13,6 +18,7 @@ import { questionsFor, resolveQuestion, rainChance, PRIOR_BIAS, observeFor } fro
 import { scoreDay } from '../src/scoring.js';
 import { biasFrom } from '../src/bias.js';
 import { POPULAR } from '../src/places.js';
+import { stationsNear, parseSynop, summariseDay } from '../src/observations.js';
 import { addDays } from '../src/time.js';
 
 const SEASON_DAYS = 30;
@@ -93,6 +99,39 @@ async function realCity(place, start, end) {
     const fc = { tmax: agg('temperature_2m_previous_day1', idx, max), precip: agg('precipitation_previous_day1', idx, sum), gust: agg('wind_gusts_10m_previous_day1', idx, max) };
     const obs = { tmax: agg('temperature_2m', idx, max), precip: agg('precipitation', idx, sum), gust: agg('wind_gusts_10m', idx, max) };
     if (![...Object.values(fc), ...Object.values(obs)].some((v) => v == null)) out.push({ date, fc, obs });
+  }
+  return out;
+}
+
+// Station reports for a place over the date range, cached like the model data.
+async function stationDays(place, start, end) {
+  const dir = new URL('./sim-data/', import.meta.url);
+  const out = new Map();
+  let wanted = 0;
+  for (let d = start; d <= end; d = addDays(d, 1)) wanted++;
+  for (const station of stationsNear(place)) {
+    if (out.size >= wanted - 3) break; // the nearest station covers it; don't fetch backups
+    const file = new URL(`synop-${station.wmo}_${start}_${end}.txt`, dir);
+    if (!existsSync(file)) {
+      let text = '';
+      // OGIMET is a free service: ask for ~2 weeks at a time and go gently.
+      for (let from = addDays(start, -1); from <= end; from = addDays(from, 15)) {
+        const to = addDays(from, 14) < end ? addDays(from, 14) : addDays(end, 1);
+        const url = `https://www.ogimet.com/cgi-bin/getsynop?block=${station.wmo}&begin=${from.replaceAll('-', '')}0000&end=${to.replaceAll('-', '')}2300`;
+        const res = await fetch(url);
+        const body = await res.text();
+        if (!res.ok || /^Status: /m.test(body)) throw new Error(`OGIMET refused ${station.wmo}: ${body.slice(0, 60)}`);
+        text += body;
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+      writeFileSync(file, text);
+    }
+    const reports = readFileSync(file, 'utf8').trim().split('\n').map(parseSynop);
+    for (let d = start; d <= end; d = addDays(d, 1)) {
+      if (out.has(d)) continue;
+      const day = summariseDay(reports, d, place.tz);
+      if (day && day.gust != null) out.set(d, { ...day, station: station.name, km: station.km });
+    }
   }
   return out;
 }
@@ -192,6 +231,24 @@ function runSeasons(cities, seasons, { calibrate }) {
   };
 }
 
+// What the rain odds and line biases look like against station reports.
+function calibrationReport(days) {
+  const edges = [0, 0.1, 0.3, 1, 1.5, 2.5, 4, 7, Infinity];
+  console.log('\nRain: how often the station saw 1 mm or more, by forecast amount');
+  for (let i = 0; i < edges.length - 1; i++) {
+    const b = days.filter((d) => d.fc.precip >= edges[i] && d.fc.precip < edges[i + 1]);
+    if (!b.length) continue;
+    const wet = b.filter((d) => d.obs.precip >= 1).length / b.length;
+    console.log(`  forecast ${edges[i]} to ${edges[i + 1]} mm: ${String(b.length).padStart(4)} days, wet ${(wet * 100).toFixed(0)}%   (current table: ${(rainChance(edges[i]) * 100).toFixed(0)}%)`);
+  }
+  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const t = days.map((d) => d.obs.tmax - d.fc.tmax);
+  const w = days.map((d) => observeFor('wind', d.obs) - observeFor('wind', d.fc));
+  const tm = days.map((d) => d.obs.tmax - d.model.tmax);
+  console.log(`Highs: station ran ${mean(t).toFixed(2)}°C above the day-before forecast on average (model "actual" was ${mean(tm).toFixed(2)}°C below the station)`);
+  console.log(`Gusts: station ran ${mean(w).toFixed(1)} mph above the day-before forecast on average\n`);
+}
+
 function report(title, r) {
   console.log(`\n${title}`);
   console.log('  Strategy                          Players  Pts/day  Chance of winning the month (each)');
@@ -202,6 +259,7 @@ function report(title, r) {
 }
 
 const real = process.argv.includes('--real');
+const useStations = process.argv.includes('--station');
 let cities;
 if (real) {
   const end = addDays(new Date().toISOString().slice(0, 10), -2);
@@ -209,14 +267,22 @@ if (real) {
   cities = [];
   for (const place of POPULAR) {
     try {
-      const days = await realCity(place, start, end);
+      let days = await realCity(place, start, end);
+      if (useStations) {
+        const obs = await stationDays(place, start, end);
+        const before = days.length;
+        days = days.filter((d) => obs.has(d.date)).map((d) => ({ ...d, obs: obs.get(d.date), model: d.obs }));
+        const s = [...obs.values()][0];
+        console.log(`${place.name.padEnd(20)} ${days.length}/${before} days from ${s ? `${s.station} (${s.km} km)` : 'no station'}`);
+      }
       if (days.length >= SEASON_DAYS) cities.push(days);
     } catch (err) {
       console.error(`${place.name}: ${err.message}`);
     }
   }
   if (!cities.length) process.exit(1);
-  console.log(`Real data: ${cities.length} UK cities, ${start} to ${end}`);
+  console.log(`Real data: ${cities.length} places, ${start} to ${end}${useStations ? ', settled on station reports' : ''}`);
+  if (useStations) calibrationReport(cities.flat());
 } else {
   cities = Array.from({ length: 20 }, () => syntheticCity(90));
   console.log('Synthetic UK autumn weather (biased like the real data)');

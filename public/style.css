@@ -213,3 +213,4 @@ dialog::backdrop { background: rgb(10 20 40 / .5); }
 .banker:disabled { opacity: .5; cursor: default; }
 .q.banked { box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 70%, transparent), 0 6px 24px rgb(10 25 50 / .14); }
 .crowd:empty { display: none; }
+.source { margin: 6px 0 0; font-size: .8125rem; color: var(--muted); }

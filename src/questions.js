@@ -14,10 +14,12 @@ const KMH_PER_MPH = 1.609344;
 const round1 = (x) => Math.round(x * 10) / 10;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
-// How often it actually rained 1 mm or more, by forecast amount. Measured on
-// Open-Meteo day-before forecasts for 14 UK cities, Aug to Oct 2026 (840 days).
+// How often a weather station actually recorded 1 mm or more, by the
+// day-before forecast amount. Open-Meteo forecasts vs the nearest station's
+// SYNOP reports for 15 UK and Isle of Man places, Aug to Oct 2026 (878 days),
+// lightly smoothed. Rerun with `npm run simulate -- --real --station`.
 const RAIN_CHANCE = [
-  [0.1, 0.03], [0.3, 0.14], [1, 0.25], [1.5, 0.4], [2.5, 0.52], [4, 0.6], [7, 0.75], [Infinity, 0.9],
+  [0.1, 0.04], [0.3, 0.2], [1, 0.34], [1.5, 0.47], [2.5, 0.56], [4, 0.72], [7, 0.78], [Infinity, 0.91],
 ];
 export const rainChance = (mm) => RAIN_CHANCE.find(([below]) => mm < below)[1];
 
@@ -25,9 +27,9 @@ export const rainChance = (mm) => RAIN_CHANCE.find(([below]) => mm < below)[1];
 export const pays = (chance) => clamp(Math.round(5 / chance), 1, 50);
 export const LINE_POINTS = 10;
 
-// How far observed values ran above the day-before forecast, on average,
-// across the same 14 UK cities. Used until a place has its own history.
-export const PRIOR_BIAS = { temp: 0.15, wind: -1.0 };
+// How far station readings ran above the day-before forecast, on average,
+// across the same places. Used until a place has its own history.
+export const PRIOR_BIAS = { temp: 0.35, wind: 0.2 };
 
 const KINDS = {
   rain: {

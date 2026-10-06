@@ -26,8 +26,8 @@ function setup({ today = { ...mild, tmax: 16 }, tomorrow = mild } = {}) {
 
 test('the forecast sets the line: rain pays odds, temperature and wind lines shift by bias', () => {
   const [rain, temp, wind] = questionsFor(mild, { temp: 0.2, wind: -1 });
-  // 3.2 mm forecast: it rained 60% of the time in the UK data, so YES pays 5/0.6 and NO 5/0.4.
-  assert.deepEqual([rain.chance, rain.pays], [0.6, { yes: 8, no: 13 }]);
+  // 3.2 mm forecast: stations saw rain 72% of the time, so YES pays 5/0.72 and NO 5/0.28.
+  assert.deepEqual([rain.chance, rain.pays], [0.72, { yes: 7, no: 18 }]);
   assert.deepEqual([temp.line, temp.pays], [18, { yes: 10, no: 10 }]);
   // 41 km/h is 25.5 mph; gusts have been coming in 1 mph under.
   assert.deepEqual([wind.forecast, wind.line], [25.5, 24.5]);
@@ -44,8 +44,8 @@ test('landing exactly on a line voids the call: 5 points, doubled for a banker',
     rain: { answer: 0, observed: 0 }, temp: { answer: null, observed: 18 }, wind: { answer: 1, observed: 50 },
   });
   const { correct, points, detail } = scoreDay(questions, results, { rain: 0, temp: 1, wind: 1 }, 'temp');
-  // NO on rain pays 13, temperature is void (5, doubled), wind YES pays 10.
-  assert.deepEqual([correct, points, detail.temp.points, detail.temp.correct], [2, 13 + 10 + 10, 10, null]);
+  // NO on rain pays 18, temperature is void (5, doubled), wind YES pays 10.
+  assert.deepEqual([correct, points, detail.temp.points, detail.temp.correct], [2, 18 + 10 + 10, 10, null]);
   assert.equal(resolveQuestion(questions[0], new Map(), '2026-10-06'), null);
 });
 
@@ -58,7 +58,7 @@ test('a full day: pick, bank, lock at local midnight, settle, score, recalibrate
   const [rain, temp, wind] = view.round.questions;
   assert.deepEqual([rain.key, temp.key, wind.key], ['rain', 'temp', 'wind']);
   assert.equal(temp.title, `Will it top ${temp.line}°C?`);
-  assert.equal(temp.line, 18); // 17.8 forecast + the UK prior of +0.15, to one decimal
+  assert.equal(temp.line, 18.2); // 17.8 forecast + the prior of +0.35, to one decimal
 
   const ann = player();
   const ben = player();
@@ -82,16 +82,17 @@ test('a full day: pick, bank, lock at local midnight, settle, score, recalibrate
   assert.equal(await game.settleRounds(), 0);
 
   const annView = await game.view(ann.id, LONDON);
-  // Ann: rain YES pays 8, doubled as her banker; temperature and wind NO pay 10 each.
-  assert.deepEqual(annView.lastRound.score, { correct: 3, points: 16 + 10 + 10 });
+  // Ann: rain YES pays 7, doubled as her banker; temperature and wind NO pay 10 each.
+  assert.deepEqual(annView.lastRound.score, { correct: 3, points: 14 + 10 + 10 });
   assert.equal(annView.lastRound.questions[0].score.banker, true);
   assert.deepEqual((await game.view(ben.id, LONDON)).lastRound.score, { correct: 0, points: 0 });
-  assert.deepEqual(annView.leaderboard.map((r) => r.points), [36, 0]);
+  assert.deepEqual(annView.leaderboard.map((r) => r.points), [34, 0]);
 
-  // London's high came in 2.3°C under the forecast, so the next line moves down a little:
-  // (-2.3 + 10 days' worth of the +0.15 prior) / 11 = -0.07.
+  // London's high came in 2.3°C under the forecast, so the next adjustment shrinks:
+  // (-2.3 + 10 days' worth of the +0.35 prior) / 11 = +0.11.
   assert.equal(annView.round.date, '2026-10-08');
-  assert.equal(annView.round.questions[1].line, 17.7);
+  assert.equal(annView.round.questions[1].line, 17.9);
+  assert.deepEqual(annView.lastRound.source, { type: 'model' });
 });
 
 test('the banker can move between calls and be cleared', async () => {

@@ -21,7 +21,15 @@ export class GameError extends Error {
   }
 }
 
-export function createGame({ db, provider, geocoder, now = () => new Date() }) {
+// Settling waits for a weather station's full day of reports (they arrive
+// within a couple of hours of midnight), and falls back to the forecast
+// model's own values only if no nearby station has a complete record.
+const STATION_FIRST_TRY_HOURS = 2;
+const STATION_RETRY_MINUTES = 30;
+const STATION_GIVE_UP_HOURS = 36;
+
+export function createGame({ db, provider, geocoder, observer = null, now = () => new Date() }) {
+  const stationTries = new Map(); // round id -> last attempt (ms)
   const q = {
     userByName: db.prepare('SELECT * FROM users WHERE name = ?'),
     userById: db.prepare('SELECT name FROM users WHERE id = ?'),
@@ -230,6 +238,7 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
         score: detail[question.key] ?? null,
       })),
       banker,
+      source: results?.source ?? null,
       score: score && { correct: score.correct, points: score.points },
     };
   }
@@ -287,25 +296,55 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
     }
   }
 
+  // What happened on a round's day: { values, source } or null to wait.
+  async function observedFor(round, place) {
+    const hoursSinceEnd = (now() - zonedMidnight(addDays(round.date, 1), place.tz)) / 3_600_000;
+    if (observer) {
+      if (hoursSinceEnd < STATION_FIRST_TRY_HOURS) return null;
+      const last = stationTries.get(round.id) ?? 0;
+      if (now() - last >= STATION_RETRY_MINUTES * 60_000) {
+        stationTries.set(round.id, +now());
+        const obs = await observer.observedDay(place, round.date);
+        if (obs) {
+          stationTries.delete(round.id);
+          return { values: obs, source: { type: 'station', name: obs.station.name, wmo: obs.station.wmo, km: obs.station.km } };
+        }
+      }
+      if (hoursSinceEnd < STATION_GIVE_UP_HOURS) return null;
+    }
+    const day = (await provider.daily(place)).get(round.date);
+    return day ? { values: day, source: { type: 'model' } } : null;
+  }
+
   async function settleRounds() {
     const due = q.openRounds.all().filter((r) => localDate(q.place.get(r.place_id).tz, now()) > r.date);
     let settled = 0;
-    for (const [placeId, rounds] of Map.groupBy(due, (r) => r.place_id)) {
-      const weather = await provider.daily(q.place.get(placeId));
-      for (const round of rounds) {
-        const results = {};
-        for (const question of JSON.parse(round.questions)) {
-          results[question.key] = resolveQuestion(question, weather, round.date);
-        }
-        if (Object.values(results).some((r) => r == null)) continue; // data not in yet; retry next tick
-        transaction(db, () => {
-          if (q.settleRound.run(JSON.stringify(results), round.id).changes) scoreRound(round, results);
-        });
-        settled++;
+    for (const round of due) {
+      const place = q.place.get(round.place_id);
+      let observed;
+      try {
+        observed = await observedFor(round, place);
+      } catch (err) {
+        console.error(`Settling ${place.name} ${round.date}:`, err.message);
+        continue;
       }
+      if (!observed) continue; // not in yet; retry next tick
+      const weather = new Map([[round.date, observed.values]]);
+      const results = {};
+      for (const question of JSON.parse(round.questions)) {
+        results[question.key] = resolveQuestion(question, weather, round.date);
+      }
+      if (Object.values(results).some((r) => r == null)) continue;
+      transaction(db, () => {
+        if (q.settleRound.run(JSON.stringify({ ...results, source: observed.source }), round.id).changes) {
+          scoreRound(round, results);
+        }
+      });
+      settled++;
     }
     return settled;
   }
+
 
   // ---- stats & leagues -------------------------------------------------
 

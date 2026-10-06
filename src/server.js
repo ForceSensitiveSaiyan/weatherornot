@@ -6,6 +6,7 @@ import { openDb } from './db.js';
 import { createGame, GameError } from './game.js';
 import { openMeteoProvider, mockProvider } from './weather.js';
 import { openMeteoGeocoder, mockGeocoder } from './places.js';
+import { synopObserver } from './observations.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const TICK_MS = 10 * 60 * 1000;
@@ -178,6 +179,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     db: openDb(process.env.DB_PATH ?? 'weatherornot.db'),
     provider,
     geocoder: mock ? mockGeocoder() : openMeteoGeocoder(),
+    // Settle on weather station reports unless running on fake weather.
+    observer: mock || process.env.OBSERVATIONS === 'model' ? null : synopObserver(),
   });
   const tick = () => game.tick()
     .then((n) => n && console.log(`Settled ${n} game(s)`))

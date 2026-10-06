@@ -60,13 +60,13 @@ function hintFor(q) {
   if (q.key === 'rain') {
     return `Forecast ${fmt(q.forecast, q.unit)}. Days like that see rain about ${Math.round(q.chance * 100)}% of the time.`;
   }
-  const what = q.key === 'temp' ? 'Highs' : 'Gusts';
   const shift = Math.round(Math.abs(q.bias) * 10) / 10;
   const base = `Forecast ${fmt(q.forecast, q.unit)}.`;
   if (shift < 0.1) return `${base} The line sits right on it.`;
-  return q.bias > 0
-    ? `${base} ${what} here have been beating the forecast lately, so the line's ${fmt(shift, q.unit)} higher.`
-    : `${base} ${what} here have been coming in under the forecast lately, so the line's ${fmt(shift, q.unit)} lower.`;
+  const tends = q.key === 'temp'
+    ? (q.bias > 0 ? 'Highs tend to come in a little warmer than forecast' : 'Highs tend to come in a little cooler than forecast')
+    : (q.bias > 0 ? 'Gusts tend to come in a little stronger than forecast' : 'Gusts tend to come in a little lighter than forecast');
+  return `${base} ${tends}, so the line's ${fmt(shift, q.unit)} ${q.bias > 0 ? 'higher' : 'lower'}.`;
 }
 
 function untilText(iso) {
@@ -159,6 +159,14 @@ function renderDone() {
     <div class="btn-row"><button class="btn" data-action="challenge">Challenge a mate</button></div>`;
 }
 
+// Where the results came from, so nobody has to take our word for it.
+function sourceLine(source) {
+  if (source?.type === 'station') {
+    return `📍 Measured at ${esc(source.name)} weather station${source.km ? `, ${source.km} km away` : ''}`;
+  }
+  return '📍 No nearby weather station had a full day of readings, so this used the forecast model\'s estimate';
+}
+
 function resultHeadline(r) {
   const banker = r.questions.find((q) => q.score?.banker);
   if (banker?.score.correct) return 'Your banker came in! ★';
@@ -181,6 +189,7 @@ function renderResults() {
       ${played ? `<div class="result-score">${last.score.correct}/${last.questions.length}</div>` : ''}
     </div>
     ${played ? `<p class="muted" style="margin:4px 0 0">${resultHeadline(last)}</p>` : ''}
+    <p class="source">${sourceLine(last.source)}</p>
     <ul class="result-list">${last.questions.map((q) => {
       const answer = q.result.answer == null ? 'Dead heat' : q.result.answer ? 'Yes' : 'No';
       const tags = q.score?.banker ? '<span class="bonus">★ banker 2×</span>' : '';
