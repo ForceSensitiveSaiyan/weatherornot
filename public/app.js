@@ -431,14 +431,14 @@ function listPlaces(places, label) {
 
 function openPicker(query = '') {
   $('#place-search').value = query;
-  if (query) search(query); else listPlaces(state.popular, 'Popular in the UK');
+  if (query) search(query); else listPlaces(state.popular, 'Popular in the UK and Isle of Man');
   $('#place-dialog').showModal();
   $('#place-search').focus();
 }
 
 async function search(query) {
   const token = (search.token = Symbol());
-  if (query.trim().length < 2) return listPlaces(state.popular, 'Popular in the UK');
+  if (query.trim().length < 2) return listPlaces(state.popular, 'Popular in the UK and Isle of Man');
   try {
     const { places } = await api(`/api/places/search?q=${encodeURIComponent(query)}`);
     if (token === search.token) listPlaces(places);
@@ -454,11 +454,14 @@ $('#place-search').addEventListener('input', (e) => {
 });
 
 // First visit: guess the city from the device's time zone where that's
-// unambiguous. The whole UK shares Europe/London, so UK visitors get the
-// UK city list to pick from instead of being dropped into London.
+// unambiguous (Europe/Isle_of_Man means Douglas). The whole UK shares
+// Europe/London, so UK visitors get the city list to pick from instead of
+// being dropped into London.
 function guessPlace() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
   const matches = state.popular.filter((p) => p.tz === tz);
+  // Jersey and Guernsey have their own time zone names but no city on our list yet.
+  if (['Europe/Jersey', 'Europe/Guernsey'].includes(tz)) return { hint: '' };
   if (matches.length === 1) return { match: matches[0] };
   if (matches.length > 1) return { hint: '' };
   return { hint: tz.split('/').pop()?.replace(/_/g, ' ') ?? '' };

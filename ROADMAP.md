@@ -53,6 +53,21 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - **New problem:** real forecasts are so good at the daily high that copying wins the nearest guess easily (31.1 vs 30.4 for the "local knowledge" players). The nearest guess needs reworking before we build it.
 - **Forecast bias:** in 11 of 14 cities the high beat the forecast more often than not (London 65% of days, Brighton 70%, Edinburgh 67%, Manchester the exception at 45%). Gusts came in about 1 mph under the forecast almost everywhere. With a line exactly on the forecast, "always say yes to warmer" would win about 65% of the time in London. We should shift each city's lines by its recent bias, so the calls stay genuine coin flips.
 
+## Phase 1b: Settle on real measurements ⏭
+
+**Problem:** the game settles on Open-Meteo's "actual" values, which are the weather model's own best estimate for that grid square, not what an instrument measured. Checked against the Ronaldsway Airport station (Isle of Man) for 47 days: the model's high was typically 0.64°C off (and ran 0.3°C cold), and it agreed with the station on rain yes/no on 85% of days. That's close, but our lines sit right on the forecast, so small gaps decide calls: settling on the station instead would have changed about 1 in 4 temperature and wind answers and about 1 in 7 rain answers.
+
+- [ ] Map each place to its nearest official weather station (e.g. Ronaldsway 03204 for Douglas, Manchester Airport 03334)
+- [ ] Settle on that station's reports (SYNOP: hourly temperature, rainfall, peak gusts), with the model as a fallback when a report is missing
+- [ ] Recalibrate rain odds and line bias against station data
+- [ ] Say where results come from on every result ("Measured at Ronaldsway Airport")
+- [ ] Pick a proper data source for production (OGIMET is fine for testing; Met Office DataHub or another licensed feed for launch)
+- [ ] Live test of a Douglas game (blocked today by the sandbox's shared Open-Meteo quota)
+
+## Phase 1c: First visit explains the game ⏭
+
+- [ ] Designer proposal ready for review: a first-visit intro ("Reckon you can beat the forecast?") with an example card and the city picker as its button, a one-time "You vs the forecast" coach strip, clearer hints, invite links that join in one tap
+
 ## Phase 2: Ready for the friends test
 
 - [ ] Hosting, with `PUBLIC_URL` set and a domain

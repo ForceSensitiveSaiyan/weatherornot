@@ -205,3 +205,24 @@ test('a short rate limit (429) is retried; a bad request is not', async () => {
   await fetchWithRetry('x', { fetchImpl: async () => (calls++, { ok: false, status: 400 }), delayMs: 1 });
   assert.equal(calls, 1);
 });
+
+test('Isle of Man, Jersey and Guernsey count as home in search, and "town, place" searches work', async () => {
+  const douglases = [
+    { id: 1, name: 'Douglas', country_code: 'US', country: 'United States', admin1: 'Georgia', latitude: 31.5, longitude: -82.8, timezone: 'America/New_York' },
+    { id: 2, name: 'Douglas', country_code: 'IM', country: 'Isle of Man', admin1: 'Douglas', latitude: 54.15, longitude: -4.48, timezone: 'Europe/Isle_of_Man' },
+  ];
+  const calls = [];
+  const fetchImpl = async (url) => {
+    const name = new URL(url).searchParams.get('name');
+    calls.push(name);
+    return { ok: true, json: async () => ({ results: name === 'Douglas' ? douglases : [] }) };
+  };
+  const geocoder = openMeteoGeocoder({ fetchImpl });
+  const plain = await geocoder.search('Douglas');
+  assert.deepEqual(plain.map((r) => r.country), ['Isle of Man', 'Georgia, United States']);
+  const spaced = await geocoder.search('Douglas Isle of Man');
+  assert.deepEqual(spaced.map((r) => r.id), ['gn:2']);
+  const comma = await geocoder.search('Douglas, Georgia');
+  assert.deepEqual(comma.map((r) => r.id), ['gn:1']);
+  assert.deepEqual(calls, ['Douglas', 'Douglas Isle of Man', 'Douglas', 'Douglas, Georgia', 'Douglas']);
+});

@@ -4,8 +4,9 @@ import { fetchWithRetry } from './weather.js';
 // Open-Meteo's geocoding API returns, so a city searched for by two players
 // always lands on the same daily game and leaderboard.
 //
-// WeatherOrNot is launching in the UK: the popular list is UK cities and UK
-// search results come first, but anywhere in the world can be played.
+// WeatherOrNot is launching in the UK and Crown Dependencies: the popular list
+// is home cities and home search results come first, but anywhere in the
+// world can be played.
 export const POPULAR = [
   { id: 'gn:2643743', name: 'London', country: 'England', lat: 51.5085, lon: -0.1257, tz: 'Europe/London' },
   { id: 'gn:2655603', name: 'Birmingham', country: 'England', lat: 52.4814, lon: -1.8998, tz: 'Europe/London' },
@@ -21,23 +22,45 @@ export const POPULAR = [
   { id: 'gn:2641673', name: 'Newcastle upon Tyne', country: 'England', lat: 54.9733, lon: -1.614, tz: 'Europe/London' },
   { id: 'gn:2641170', name: 'Nottingham', country: 'England', lat: 52.9536, lon: -1.1505, tz: 'Europe/London' },
   { id: 'gn:2654710', name: 'Brighton', country: 'England', lat: 50.8284, lon: -0.1395, tz: 'Europe/London' },
+  { id: 'gn:3042237', name: 'Douglas', country: 'Isle of Man', lat: 54.15, lon: -4.4833, tz: 'Europe/Isle_of_Man' },
 ];
 
+// The UK plus the Crown Dependencies, which have their own country codes.
+const HOME = { GB: null, IM: 'Isle of Man', JE: 'Jersey', GG: 'Guernsey' };
+const isHome = (r) => r.country_code in HOME;
+const homeLabel = (r) => HOME[r.country_code] ?? r.admin1 ?? 'United Kingdom';
+
 export function openMeteoGeocoder({ fetchImpl = fetch } = {}) {
+  async function lookup(name) {
+    const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+    url.search = new URLSearchParams({ name, count: '10', language: 'en', format: 'json' });
+    const res = await fetchWithRetry(url, { fetchImpl });
+    if (!res.ok) throw new Error(`Open-Meteo geocoding ${res.status}`);
+    return (await res.json()).results ?? [];
+  }
   return {
     async search(query) {
-      const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
-      url.search = new URLSearchParams({ name: query, count: '8', language: 'en', format: 'json' });
-      const res = await fetchWithRetry(url, { fetchImpl });
-      if (!res.ok) throw new Error(`Open-Meteo geocoding ${res.status}`);
-      const { results = [] } = await res.json();
+      let results = await lookup(query);
+      // The geocoder only matches place names, so "Douglas, Isle of Man" or
+      // "Douglas Isle of Man" finds nothing. Search the first part and use
+      // the rest to pick the right one.
+      if (!results.length) {
+        const [first, ...rest] = query.includes(',') ? query.split(',') : query.split(/\s+/);
+        const hint = rest.join(' ').trim().toLowerCase();
+        if (hint) {
+          const all = await lookup(first.trim());
+          const matching = all.filter((r) => [r.admin1, r.country, HOME[r.country_code]].join(' ').toLowerCase().includes(hint));
+          results = matching.length ? matching : all;
+        }
+      }
       return results
         .filter((r) => r.timezone)
-        .sort((a, b) => (b.country_code === 'GB') - (a.country_code === 'GB')) // stable: keeps relevance order
+        .sort((a, b) => isHome(b) - isHome(a)) // stable: keeps relevance order
+        .slice(0, 8)
         .map((r) => ({
           id: `gn:${r.id}`,
           name: r.name,
-          country: r.country_code === 'GB' ? r.admin1 ?? 'United Kingdom' : [r.admin1, r.country].filter(Boolean).join(', '),
+          country: isHome(r) ? homeLabel(r) : [r.admin1, r.country].filter(Boolean).join(', '),
           lat: r.latitude,
           lon: r.longitude,
           tz: r.timezone,
