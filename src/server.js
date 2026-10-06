@@ -31,6 +31,11 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
       const round = game.makePick(user.id, Number(ctx.body.roundId), ctx.body.key, ctx.body.pick);
       return { round, user, stats: game.stats(user.id) };
     },
+    'POST /api/banker': (ctx) => {
+      const user = ensureUser(ctx);
+      const key = ctx.body.key == null ? null : String(ctx.body.key);
+      return { round: game.setBanker(user.id, Number(ctx.body.roundId), key) };
+    },
     'POST /api/account': (ctx) => {
       limiter(ctx.ip, 'account', 20);
       game.saveAccount(ensureUser(ctx).id, ctx.body.name, ctx.body.password);

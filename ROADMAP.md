@@ -13,17 +13,21 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - ✅ UK tailoring (°C, mph, UK cities first, British copy)
 - ✅ Verified against live Open-Meteo data, with retries for outages and rate limits
 
-## Phase 1: Fix the core game 🔨
+## Phase 1: Fix the core game ✅
 
 **Problem:** copying the forecast is the best strategy. The forecast is right most days, so copying it scores well. The +10 "beat the forecast" bonus doesn't pay enough to outweigh the extra misses. If everyone copies, everyone scores the same, and there's nothing to talk about. See "Why the game needs to change" below.
 
-- [ ] Set lines *at* the forecast, so the forecast itself is a coin flip on every question ("Will Manchester top 17.5°C?" when the forecast says 17.5°C)
-- [ ] Add one "nearest guess" question per day (e.g. tomorrow's high), scored by how close you get
-- [ ] Rebalance scoring so the leaderboard actually spreads out
+- [x] Set lines *at* the forecast, so the forecast itself is a coin flip on every question ("Will Manchester top 17.5°C?" when the forecast says 17.5°C), with rain paying odds from a calibrated table
+- [x] ~~Nearest guess~~ dropped: on real data copying the forecast wins it. Replaced by a daily ★ banker (one call counts double), which spreads scores without rewarding copying
+- [x] Rebalance scoring: odds for rain, 10 for lines, banker doubles, exact hits on a line are void (5 each). The "beat the forecast" and "bold call" bonuses are gone
 - [x] Simulator (`npm run simulate`): leagues of copiers, random guessers, contrarians and players with a small local edge, over 2,000 simulated months
 - [x] Rerun the simulator on real UK forecasts vs outcomes (`npm run simulate -- --real`): 14 UK cities, 6 Aug to 4 Oct 2026
-- [ ] Calibrate each city's lines for forecast bias (see real-data findings), so "always say yes" isn't the new copying
-- [ ] Rework the nearest guess so copying the forecast doesn't win it (closest-only points, or guess something forecasts are bad at, like rainfall amount), and check it in the simulator before building
+- [x] Calibrate each city's lines from its last 30 settled games, leaning on a UK-wide prior until it has history
+- [x] Simulator now runs the game's own question and scoring code
+
+**Result on real UK data (what shipped):** with calibrated lines, the temperature line came out YES on 52% of days and the wind line on 50% (exactly on the forecast they were 62% and 35%). Copying the forecast scores 19.9 points a day against 19.3 for random guessing, so it's no longer a strategy. Players with even a small genuine edge still pull ahead over a month.
+
+**Still to watch in the friends test:** rain is a long shot (YES pays up to 50) on the ~40% of days with a dry forecast, so that call is fairly dead on dry days. If it feels flat, try a different second rain question on those days.
 
 **Simulator findings (synthetic UK autumn weather):**
 

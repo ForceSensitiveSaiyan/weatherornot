@@ -4,12 +4,11 @@ import { hashPassword, verifyPassword, newToken } from './auth.js';
 import { localDate, addDays, zonedMidnight, gameNumber } from './time.js';
 import { POPULAR } from './places.js';
 import { questionsFor, resolveQuestion, describeQuestion } from './questions.js';
+import { scoreDay } from './scoring.js';
+import { biasFrom } from './bias.js';
 
-// Scoring, per question: a right call is worth 10. Calling it against the
-// forecast and being right adds 10; being right when a third or fewer of the
-// players agreed with you adds 5.
-export const POINTS = { correct: 10, beatForecast: 10, minority: 5 };
-const MINORITY_SHARE = 1 / 3;
+// How many recent settled games at a place set its line calibration.
+const BIAS_WINDOW = 30;
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I lookalikes
 const ADJECTIVES = ['Sunny', 'Misty', 'Breezy', 'Stormy', 'Frosty', 'Cloudy', 'Rainy', 'Balmy', 'Gusty', 'Snowy'];
@@ -43,6 +42,14 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
     openRounds: db.prepare("SELECT * FROM rounds WHERE status = 'open'"),
     lastSettled: db.prepare(`
       SELECT * FROM rounds WHERE place_id = ? AND status = 'settled' ORDER BY date DESC LIMIT 1`),
+    recentSettled: db.prepare(`
+      SELECT questions, results FROM rounds WHERE place_id = ? AND status = 'settled' ORDER BY date DESC LIMIT ?`),
+    setBanker: db.prepare(`
+      INSERT INTO bankers (round_id, user_id, key) VALUES (?, ?, ?)
+      ON CONFLICT (round_id, user_id) DO UPDATE SET key = excluded.key`),
+    clearBanker: db.prepare('DELETE FROM bankers WHERE round_id = ? AND user_id = ?'),
+    myBanker: db.prepare('SELECT key FROM bankers WHERE round_id = ? AND user_id = ?'),
+    roundBankers: db.prepare('SELECT user_id, key FROM bankers WHERE round_id = ?'),
     settleRound: db.prepare(
       "UPDATE rounds SET status = 'settled', results = ? WHERE id = ? AND status = 'open'"),
     upsertPick: db.prepare(`
@@ -175,10 +182,21 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
       throw new GameError("Couldn't reach the weather service. Try again in a moment.", 503);
     }
     const tomorrow = weather.get(date);
-    const todayWeather = weather.get(today);
-    if (!tomorrow || !todayWeather) throw new GameError('No forecast available for this place yet', 503);
-    q.insertRound.run(place.id, date, JSON.stringify(questionsFor(tomorrow, todayWeather)), tomorrow.code);
+    if (!tomorrow) throw new GameError('No forecast available for this place yet', 503);
+    q.insertRound.run(place.id, date, JSON.stringify(questionsFor(tomorrow, placeBias(place.id))), tomorrow.code);
     return q.roundFor.get(place.id, date);
+  }
+
+  // How this place's highs and gusts have recently run against the forecast,
+  // from its own settled games, so tomorrow's lines are fair coin flips.
+  function placeBias(placeId) {
+    const history = q.recentSettled.all(placeId, BIAS_WINDOW).map((r) => {
+      const questions = Object.fromEntries(JSON.parse(r.questions).map((x) => [x.key, x]));
+      const results = JSON.parse(r.results);
+      const diff = (key) => (questions[key] && results[key] ? results[key].observed - questions[key].forecast : null);
+      return { temp: diff('temp'), wind: diff('wind') };
+    });
+    return biasFrom(history);
   }
 
   function crowdFor(roundId) {
@@ -196,6 +214,7 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
     const results = round.results ? JSON.parse(round.results) : null;
     const score = userId ? q.myScore.get(round.id, userId) : null;
     const detail = score ? JSON.parse(score.detail) : {};
+    const banker = userId ? q.myBanker.get(round.id, userId)?.key ?? null : null;
     return {
       id: round.id,
       number: gameNumber(round.date),
@@ -210,6 +229,7 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
         result: results?.[question.key] ?? null,
         score: detail[question.key] ?? null,
       })),
+      banker,
       score: score && { correct: score.correct, points: score.points },
     };
   }
@@ -228,16 +248,29 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
     };
   }
 
-  function makePick(userId, roundId, key, value) {
-    if (value !== 0 && value !== 1) throw new GameError('Pick yes or no');
+  function openRound(roundId, key) {
     const round = q.round.get(roundId);
     if (!round) throw new GameError('No such game', 404);
     const place = getPlace(round.place_id);
     if (round.status !== 'open' || localDate(place.tz, now()) >= round.date) {
       throw new GameError('This game is locked', 409);
     }
-    if (!JSON.parse(round.questions).some((x) => x.key === key)) throw new GameError('No such question');
+    if (key != null && !JSON.parse(round.questions).some((x) => x.key === key)) throw new GameError('No such question');
+    return { round, place };
+  }
+
+  function makePick(userId, roundId, key, value) {
+    if (value !== 0 && value !== 1) throw new GameError('Pick yes or no');
+    const { round, place } = openRound(roundId, key);
     q.upsertPick.run(round.id, userId, key, value);
+    return roundView(round, place, userId);
+  }
+
+  // One call a day can be your banker, worth double. key null clears it.
+  function setBanker(userId, roundId, key) {
+    const { round, place } = openRound(roundId, key);
+    if (key == null) q.clearBanker.run(round.id, userId);
+    else q.setBanker.run(round.id, userId, key);
     return roundView(round, place, userId);
   }
 
@@ -245,33 +278,11 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
 
   function scoreRound(round, results) {
     const questions = JSON.parse(round.questions);
-    const crowd = crowdFor(round.id);
+    const bankers = new Map(q.roundBankers.all(round.id).map((b) => [b.user_id, b.key]));
     const byUser = Map.groupBy(q.roundPicks.all(round.id), (p) => p.user_id);
     for (const [userId, userPicks] of byUser) {
-      const detail = {};
-      let correct = 0;
-      let points = 0;
-      for (const { key, pick } of userPicks) {
-        const question = questions.find((x) => x.key === key);
-        const right = pick === results[key].answer;
-        const bonuses = [];
-        let p = 0;
-        if (right) {
-          correct++;
-          p += POINTS.correct;
-          if (pick !== question.forecastSays) {
-            p += POINTS.beatForecast;
-            bonuses.push('beatForecast');
-          }
-          const c = crowd[key];
-          if ((pick ? c.yes : c.no) / (c.yes + c.no) <= MINORITY_SHARE) {
-            p += POINTS.minority;
-            bonuses.push('minority');
-          }
-        }
-        points += p;
-        detail[key] = { pick, correct: right, points: p, bonuses };
-      }
+      const picks = Object.fromEntries(userPicks.map((p) => [p.key, p.pick]));
+      const { correct, points, detail } = scoreDay(questions, results, picks, bankers.get(userId));
       q.insertScore.run(round.id, userId, correct, points, JSON.stringify(detail));
     }
   }
@@ -351,7 +362,7 @@ export function createGame({ db, provider, geocoder, now = () => new Date() }) {
 
   return {
     createGuest, saveAccount, login, logout, userForToken,
-    searchPlaces, popularPlaces, view, makePick, settleRounds, stats,
+    searchPlaces, popularPlaces, view, makePick, setBanker, settleRounds, stats,
     createLeague, joinLeague, leaveLeague, myLeagues, leaguePreview,
     tick: settleRounds,
   };

@@ -5,7 +5,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from '../src/db.js';
-import { createGame, POINTS } from '../src/game.js';
+import { createGame } from '../src/game.js';
+import { scoreDay } from '../src/scoring.js';
 import { questionsFor, resolveQuestion } from '../src/questions.js';
 import { mockGeocoder, openMeteoGeocoder } from '../src/places.js';
 import { fetchWithRetry } from '../src/weather.js';
@@ -23,69 +24,84 @@ function setup({ today = { ...mild, tmax: 16 }, tomorrow = mild } = {}) {
   return { game, clock, weather, player };
 }
 
-test('wildcard question follows the forecast', () => {
-  const keys = (t) => questionsFor(t, mild).map((x) => x.key);
-  assert.deepEqual(keys(mild), ['rain', 'warmer', 'wind']);
-  assert.deepEqual(keys({ ...mild, tmax: 29 }), ['rain', 'warmer', 'heat']);
-  assert.deepEqual(keys({ ...mild, tmax: 2, tmin: -1, snow: 1 }), ['rain', 'warmer', 'snow']);
-  const heat = questionsFor({ ...mild, tmax: 29 }, mild).find((x) => x.key === 'heat');
-  assert.equal(heat.line, 30);
-  assert.equal(heat.forecastSays, 0);
+test('the forecast sets the line: rain pays odds, temperature and wind lines shift by bias', () => {
+  const [rain, temp, wind] = questionsFor(mild, { temp: 0.2, wind: -1 });
+  // 3.2 mm forecast: it rained 60% of the time in the UK data, so YES pays 5/0.6 and NO 5/0.4.
+  assert.deepEqual([rain.chance, rain.pays], [0.6, { yes: 8, no: 13 }]);
+  assert.deepEqual([temp.line, temp.pays], [18, { yes: 10, no: 10 }]);
+  // 41 km/h is 25.5 mph; gusts have been coming in 1 mph under.
+  assert.deepEqual([wind.forecast, wind.line], [25.5, 24.5]);
+  // A dry forecast makes rain a long shot, capped at 50.
+  const [dry] = questionsFor({ ...mild, precip: 0 });
+  assert.deepEqual(dry.pays, { yes: 50, no: 5 });
 });
 
-test("'warmer' is judged against today's actual high, not the forecast", () => {
-  const [, warmer] = questionsFor({ ...mild, tmax: 18 }, { ...mild, tmax: 16 });
-  assert.equal(warmer.forecastSays, 1);
-  const weather = new Map([['2026-10-05', { tmax: 19 }], ['2026-10-06', { tmax: 18 }]]);
-  assert.deepEqual(resolveQuestion(warmer, weather, '2026-10-06'), { answer: 0, observed: 18, line: 19 });
-  assert.equal(resolveQuestion(warmer, new Map([['2026-10-06', { tmax: 18 }]]), '2026-10-06'), null);
+test('landing exactly on a line voids the call: 5 points, doubled for a banker', () => {
+  const questions = questionsFor(mild, { temp: 0.2, wind: -1 });
+  const weather = new Map([['2026-10-06', { tmax: 18, precip: 0, gust: 80.5 }]]);
+  const results = Object.fromEntries(questions.map((q) => [q.key, resolveQuestion(q, weather, '2026-10-06')]));
+  assert.deepEqual(results, {
+    rain: { answer: 0, observed: 0 }, temp: { answer: null, observed: 18 }, wind: { answer: 1, observed: 50 },
+  });
+  const { correct, points, detail } = scoreDay(questions, results, { rain: 0, temp: 1, wind: 1 }, 'temp');
+  // NO on rain pays 13, temperature is void (5, doubled), wind YES pays 10.
+  assert.deepEqual([correct, points, detail.temp.points, detail.temp.correct], [2, 13 + 10 + 10, 10, null]);
+  assert.equal(resolveQuestion(questions[0], new Map(), '2026-10-06'), null);
 });
 
-test('a full day: pick, lock at local midnight, settle, score with bonuses', async () => {
+test('a full day: pick, bank, lock at local midnight, settle, score, recalibrate', async () => {
   const { game, clock, weather, player } = setup();
   const view = await game.view(null, LONDON);
   assert.equal(view.round.date, '2026-10-06');
   assert.equal(view.round.number, 6);
   assert.equal(view.round.closesAt, '2026-10-05T23:00:00.000Z');
-  // Forecast: 3.2 mm rain (yes), warmer 17.8 vs 16 (yes), gusts 41 km/h = 25.5 mph vs line 25 mph (yes).
-  const [rain, warmer, wind] = view.round.questions;
-  assert.deepEqual([rain.forecastSays, warmer.forecastSays, wind.key, wind.line, wind.unit],
-    [1, 1, 'wind', 25, 'mph']);
+  const [rain, temp, wind] = view.round.questions;
+  assert.deepEqual([rain.key, temp.key, wind.key], ['rain', 'temp', 'wind']);
+  assert.equal(temp.title, `Will it top ${temp.line}°C?`);
+  assert.equal(temp.line, 18); // 17.8 forecast + the UK prior of +0.15, to one decimal
 
   const ann = player();
   const ben = player();
-  const cat = player();
   const id = view.round.id;
-  for (const p of [ann, ben, cat]) game.makePick(p.id, id, 'rain', 1);
-  game.makePick(ann.id, id, 'warmer', 0); // against the forecast, and alone
-  game.makePick(ben.id, id, 'warmer', 1);
-  game.makePick(cat.id, id, 'warmer', 1);
-  game.makePick(ann.id, id, 'wind', 1);
-  game.makePick(ann.id, id, 'wind', 0); // changing your mind is fine
+  game.makePick(ann.id, id, 'rain', 1);
+  game.makePick(ann.id, id, 'temp', 0);
+  game.makePick(ann.id, id, 'wind', 0);
+  assert.equal(game.setBanker(ann.id, id, 'rain').banker, 'rain');
+  for (const key of ['rain', 'temp', 'wind']) game.makePick(ben.id, id, key, key === 'rain' ? 0 : 1);
   assert.throws(() => game.makePick(ann.id, id, 'snow', 1), /No such question/);
 
   clock.now = new Date('2026-10-05T23:30:00Z'); // past midnight in London
-  assert.throws(() => game.makePick(ben.id, id, 'wind', 1), /locked/);
+  assert.throws(() => game.makePick(ben.id, id, 'wind', 0), /locked/);
+  assert.throws(() => game.setBanker(ben.id, id, 'wind'), /locked/);
   assert.equal(await game.settleRounds(), 0);
 
   clock.now = new Date('2026-10-07T07:00:00Z');
   weather.set('2026-10-06', { ...mild, tmax: 15.5, precip: 6, gust: 35 }); // wet, cooler, calmer
-  weather.set('2026-10-07', mild);
   weather.set('2026-10-08', mild);
   assert.equal(await game.settleRounds(), 1);
   assert.equal(await game.settleRounds(), 0);
 
   const annView = await game.view(ann.id, LONDON);
-  const last = annView.lastRound;
-  assert.equal(last.questions[1].result.answer, 0);
-  // Ann: rain right (10), warmer right + beat forecast + minority (25), wind right + beat forecast (20)
-  assert.deepEqual(last.score, { correct: 3, points: 10 + 25 + 20 });
-  assert.deepEqual(last.questions[1].score.bonuses, ['beatForecast', 'minority']);
-  assert.equal(annView.stats.points, 55);
-  assert.equal((await game.view(ben.id, LONDON)).lastRound.score.points, POINTS.correct);
-  assert.deepEqual(annView.leaderboard.map((r) => r.points), [55, 10, 10]);
-  // A fresh game for the 8th has opened.
+  // Ann: rain YES pays 8, doubled as her banker; temperature and wind NO pay 10 each.
+  assert.deepEqual(annView.lastRound.score, { correct: 3, points: 16 + 10 + 10 });
+  assert.equal(annView.lastRound.questions[0].score.banker, true);
+  assert.deepEqual((await game.view(ben.id, LONDON)).lastRound.score, { correct: 0, points: 0 });
+  assert.deepEqual(annView.leaderboard.map((r) => r.points), [36, 0]);
+
+  // London's high came in 2.3°C under the forecast, so the next line moves down a little:
+  // (-2.3 + 10 days' worth of the +0.15 prior) / 11 = -0.07.
   assert.equal(annView.round.date, '2026-10-08');
+  assert.equal(annView.round.questions[1].line, 17.7);
+});
+
+test('the banker can move between calls and be cleared', async () => {
+  const { game, player } = setup();
+  const { round } = await game.view(null, LONDON);
+  const u = player();
+  assert.equal(game.setBanker(u.id, round.id, 'temp').banker, 'temp');
+  assert.equal(game.setBanker(u.id, round.id, 'wind').banker, 'wind');
+  assert.equal(game.setBanker(u.id, round.id, null).banker, null);
+  assert.throws(() => game.setBanker(u.id, round.id, 'snow'), /No such question/);
 });
 
 test('guests can play, then save their account and log in elsewhere', () => {
@@ -154,16 +170,6 @@ test('an old points-betting database is refused with a clear message', (t) => {
   old.exec('CREATE TABLE markets (id INTEGER PRIMARY KEY)');
   old.close();
   assert.throws(() => openDb(path), /older version/);
-});
-
-test('wind is asked in mph with round-number lines', () => {
-  const wind = (gust) => questionsFor({ ...mild, gust }, mild).find((x) => x.key === 'wind');
-  assert.equal(wind(41).line, 25);
-  assert.equal(wind(20).line, 20);       // never below 20 mph
-  assert.equal(wind(72).line, 45);       // 44.7 mph
-  const q = wind(72);
-  const weather = new Map([['2026-10-06', { gust: 80.5 }]]); // 50.0 mph
-  assert.deepEqual(resolveQuestion(q, weather, '2026-10-06'), { answer: 1, observed: 50, line: 45 });
 });
 
 test('UK search results come before same-named places abroad', async () => {

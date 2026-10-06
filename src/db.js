@@ -1,14 +1,14 @@
 import { DatabaseSync } from 'node:sqlite';
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export function openDb(path = ':memory:') {
   const db = new DatabaseSync(path);
   const { user_version: version } = db.prepare('PRAGMA user_version').get();
   const hasTables = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table'").get();
   if (hasTables && version !== SCHEMA_VERSION) {
-    throw new Error(`${path} was made by an older version of WeatherOrNot (points betting). ` +
-      'Delete it (or set DB_PATH to a new file) to start the daily game.');
+    throw new Error(`${path} was made by an older version of WeatherOrNot. ` +
+      'Delete it (or set DB_PATH to a new file) to start fresh.');
   }
   db.exec(`
     PRAGMA foreign_keys = ON;
@@ -52,6 +52,13 @@ export function openDb(path = ':memory:') {
       PRIMARY KEY (round_id, user_id, key)
     );
     CREATE INDEX IF NOT EXISTS picks_user ON picks(user_id);
+    -- Each player's one double-points call per game.
+    CREATE TABLE IF NOT EXISTS bankers (
+      round_id   INTEGER NOT NULL REFERENCES rounds(id),
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      key        TEXT NOT NULL,
+      PRIMARY KEY (round_id, user_id)
+    );
     CREATE TABLE IF NOT EXISTS scores (
       round_id   INTEGER NOT NULL REFERENCES rounds(id),
       user_id    INTEGER NOT NULL REFERENCES users(id),

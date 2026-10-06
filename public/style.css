@@ -200,3 +200,16 @@ dialog::backdrop { background: rgb(10 20 40 / .5); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before { transition: none !important; animation: none !important; }
 }
+
+/* Odds on the buttons, the line hint and the banker toggle. */
+.choice small { font: 600 .85rem var(--font-display); opacity: .8; margin-left: 4px; }
+.q-foot { display: flex; align-items: center; gap: 10px; }
+.hint { flex: 1; margin: 0; font-size: .8125rem; color: var(--muted); line-height: 1.4; }
+.banker { flex: none; min-height: 40px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+  font: 600 .875rem var(--font-display); border: 2px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  background: transparent; color: var(--gold); }
+.banker[aria-pressed='true'] { background: var(--gold); border-color: var(--gold); color: #fff; }
+@media (prefers-color-scheme: dark) { .banker[aria-pressed='true'] { color: #1b1300; } }
+.banker:disabled { opacity: .5; cursor: default; }
+.q.banked { box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 70%, transparent), 0 6px 24px rgb(10 25 50 / .14); }
+.crowd:empty { display: none; }
