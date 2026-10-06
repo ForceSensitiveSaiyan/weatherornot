@@ -4,8 +4,9 @@
 // A void call (the weather landed exactly on the line) earns 5 for everyone
 // who made it. Your "banker" call, one a day, counts double.
 export const VOID_POINTS = 5;
+export const MAX_POINTS = Infinity;
 
-export function scoreDay(questions, results, picks, banker) {
+export function scoreDay(questions, results, picks, banker, { cap = MAX_POINTS } = {}) {
   const detail = {};
   let correct = 0;
   let points = 0;
@@ -20,7 +21,7 @@ export function scoreDay(questions, results, picks, banker) {
       p = pick ? q.pays.yes : q.pays.no;
       correct++;
     } else p = 0;
-    if (doubled) p *= 2;
+    if (doubled) p = Math.min(p * 2, cap);
     points += p;
     detail[q.key] = { pick, correct: answer == null ? null : pick === answer, points: p, banker: doubled };
   }

@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>WeatherOrNot · Guess tomorrow's weather</title>
-  <meta name="description" content="3 quick questions on tomorrow's weather where you live. Keep your streak going and beat your mates.">
-  <meta property="og:title" content="WeatherOrNot">
-  <meta property="og:description" content="Reckon you can beat the forecast? 3 quick questions on tomorrow's weather. Free, no signup.">
-  <meta property="og:url" content="{{ORIGIN}}/">
+  <meta name="description" content="Three yes or no questions on tomorrow's weather where you live, set right by the forecast. Free, no signup.">
+  <meta property="og:title" content="{{OG_TITLE}}">
+  <meta property="og:description" content="{{OG_DESC}}">
+  <meta property="og:url" content="{{ORIGIN}}{{OG_PATH}}">
   <meta property="og:image" content="{{ORIGIN}}/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -29,6 +29,7 @@
       <div id="streak" class="pill" hidden title="Days in a row"></div>
     </header>
 
+    <!-- League invites and friends' shared links, for players who already have a town. -->
     <div id="invite" class="invite card" hidden></div>
 
     <!-- First visit: what the game is, with the town picker as the button. -->
@@ -36,55 +37,48 @@
       <div class="a-intro">
         <div id="intro-from" class="card invite" hidden></div>
         <section class="intro-text">
-          <span class="kicker" id="intro-kicker">⛅ A daily weather game for you and your mates</span>
           <h1>Reckon you can <em>beat the forecast?</em></h1>
-          <p>3 quick questions on tomorrow's weather where you live. The forecast is the starting point. Your gut does the rest.</p>
+          <p>Three yes or no questions about tomorrow's weather where you live. Each one is set right by the forecast, so copying it is a coin flip.</p>
         </section>
       </div>
-      <div class="a-demo demos">
+      <div class="a-demo demos" id="demos">
         <section class="card demo" aria-label="Example: a temperature question">
-          <div class="demo-label">How the questions work</div>
           <div class="q-head"><span class="q-emoji" aria-hidden="true">🌡️</span><span class="q-title">Will it top 14°C tomorrow?</span></div>
           <div class="track" aria-hidden="true">
-            <span class="side l">◀ No</span><span class="side r">Yes ▶</span>
-            <div class="mark ln">Asked 14°<i></i></div>
+            <span class="side l">No</span><span class="side r">Yes</span>
             <div class="rail"></div>
-            <div class="mark fc"><i></i>Forecast 13.8°</div>
+            <div class="mark ln" style="left:56%">14°<i></i></div>
+            <div class="mark fc" style="left:42%"><i></i>Forecast 13.8°</div>
           </div>
-          <p class="demo-copy">We set the question right by the forecast, so just copying it is a coin flip. Know better? <strong>10 pts.</strong></p>
+          <p class="demo-copy">The forecast says 13.8°, just under. Think it'll be warmer than that? Say Yes. A right answer scores 10.</p>
         </section>
         <section class="card demo" aria-label="Example: the rain question">
           <div class="q-head"><span class="q-emoji" aria-hidden="true">☔️</span><span class="q-title">Will it rain tomorrow?</span></div>
-          <div class="choices demo-choices" aria-hidden="true">
-            <span class="choice yes">Yes <small>· 7 pts</small></span>
-            <span class="choice no">No <small>· 18 pts</small></span>
-          </div>
-          <p class="demo-copy">The forecast says rain's likely (about 7 in 10), so a right Yes scores less. Back the long shot and get it right? <strong>18 pts.</strong></p>
+          <p class="demo-odds" aria-hidden="true"><span class="y">Yes 7 pts</span><span class="n">No 18 pts</span></p>
+          <p class="demo-copy">Rain's likely, so a right Yes scores less. Back the long shot and get it right for 18.</p>
         </section>
       </div>
       <div class="cta a-cta">
         <button class="btn btn-big" id="intro-guess" hidden></button>
-        <button class="btn btn-big" id="intro-pick">📍 Pick your town and play</button>
+        <button class="btn btn-big" id="intro-pick">Pick your town</button>
         <div class="cities" id="intro-cities"></div>
-        <p class="fine">Free. No signup. No money. Answers close at midnight.</p>
+        <p class="fine">Free, no signup. Answers close at midnight.</p>
       </div>
       <div class="a-extra" id="intro-extra">
-        <div class="chips">
-          <span class="chip gold">★ Double points on one a day</span>
-          <span class="chip">🎯 You vs the forecast</span>
-          <span class="chip">🏆 Leagues with mates</span>
-        </div>
         <section class="peek">
-          <h2>What lands in the group chat next morning</h2>
-          <div class="bubble">WeatherOrNot #7 · Douglas<br><span class="g">☔️✅⭐ 🌡️❌ 💨✅</span><br>2/3 (the forecast got 1/3) · 34 pts · 🔥4</div>
+          <h2>What you send the group chat next morning</h2>
+          <div class="bubble">WeatherOrNot · Douglas · Mon 5 Oct<br>Ronaldsway Airport: dry, 13.7°C, gusts 40 mph<br><span class="g">☔️✅⭐ 🌡️❌ 💨✅</span><br>2/3 · 34 pts · 🔥4 · forecast 1/3</div>
         </section>
       </div>
     </div>
 
+    <!-- Unseen results go above tomorrow's questions. -->
+    <div id="results-top"></div>
+
     <section class="hero">
       <h1><span id="sky-icon" class="sky-icon" aria-hidden="true">⛅</span> <span id="hero-day">Tomorrow</span></h1>
       <button id="place-button" class="place-button" aria-haspopup="dialog">
-        <span aria-hidden="true">📍</span> <span id="place-name">Pick your city</span> <span aria-hidden="true">▾</span>
+        <span id="place-name">Pick your town</span> <span aria-hidden="true">▾</span>
       </button>
       <p id="hero-sub" class="hero-sub"></p>
       <p id="hero-station" class="hero-station"></p>
@@ -93,13 +87,8 @@
     <div id="load-error" class="card load-error" role="alert" hidden></div>
 
     <main id="main" hidden>
-      <div id="results-top"></div>
-      <div id="coach" class="coach" hidden>
-        <span class="coach-emoji" aria-hidden="true">👀</span>
-        <span><b>You vs the forecast.</b> Every question starts from what the forecast says. Go with your gut and look out the window.</span>
-        <button class="coach-x" data-action="close-coach" aria-label="Got it, hide this">✕</button>
-      </div>
       <div id="questions" class="questions"></div>
+      <div id="name-card" class="card name-card" hidden></div>
       <div id="done" class="card done" hidden></div>
       <div id="results-bottom"></div>
 
@@ -109,55 +98,58 @@
         <ol id="leaderboard" class="board"></ol>
       </section>
 
-      <section class="card">
+      <section class="card" id="leagues-card" hidden>
         <h2>Leagues</h2>
         <div id="leagues"></div>
-        <p class="muted small-print">Start a league for your mates, family or office and send them the link.</p>
+        <p class="muted small-print">Start one for your group chat, then send them the link.</p>
         <form id="create-league" class="inline">
           <input name="name" placeholder="League name" maxlength="40" required aria-label="League name">
-          <button type="submit" class="btn">Create</button>
+          <button type="submit" class="btn">Start</button>
         </form>
       </section>
 
-      <section class="card" id="account"></section>
-
-      <section class="card how" id="how">
-        <h2>How it works</h2>
-        <p>3 quick questions about <strong>tomorrow's</strong> weather where you live. Change your answers until midnight. We check the weather at your nearest station and post results the morning after.</p>
-        <div class="chips">
-          <span class="chip">☔️ <small>Rain: the less likely answer scores more</small></span>
-          <span class="chip">🌡️💨 <small>10 pts for a right answer</small></span>
-          <span class="chip gold">★ <small>Double points on one question a day</small></span>
-        </div>
-        <p class="muted small-print">Every question is built from the forecast, so just copying the forecast is a coin flip. Your gut, local knowledge and a look out the window are what win. Free to play. No money, just bragging rights.</p>
-      </section>
+      <section class="card" id="account" hidden></section>
     </main>
 
     <footer class="site-footer">
-      <div class="footer-brand">
-        <div class="logo">Weather<span>Or</span>Not</div>
-        <p>Guess tomorrow's weather. Beat the forecast, then beat your mates.</p>
-      </div>
+      <details class="how" id="how">
+        <summary>How it works</summary>
+        <p>Three yes or no questions about tomorrow's weather where you live. You can change your answers until midnight.</p>
+        <p>Rain: the less likely answer scores more, and the points are on the buttons. Temperature and wind: 10 for a right answer. Tap ★ to double one answer a day. If the reading lands exactly on the number asked, everyone who answered gets 5.</p>
+        <p>Each question is set right by the forecast, adjusted for how forecasts usually run in your town, so just copying the forecast is a coin flip. Next morning we check the nearest official weather station and post the results.</p>
+        <p>It's free. No money, just bragging rights.</p>
+      </details>
       <nav class="footer-links" aria-label="Footer">
-        <a href="#how">How it works</a>
         <a href="/privacy.html">Privacy</a>
         <a href="/terms.html">Terms</a>
         <a href="mailto:hello@aidoo.biz">Contact</a>
+        <button class="linkish" id="footer-login" data-action="open-login">Log in</button>
       </nav>
-      <p class="footer-small">Free to play. No money, no prizes, just bragging rights. For the UK, the Isle of Man and the Channel Islands.</p>
-      <p class="footer-small">Forecasts from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Results from official weather station reports, via <a href="https://www.ogimet.com/" target="_blank" rel="noopener">OGIMET</a>. Station locations from <a href="https://www.ncei.noaa.gov/products/land-based-station/integrated-surface-database" target="_blank" rel="noopener">NOAA</a>.</p>
-      <p class="footer-small">It's a game, not a weather service. For anything that matters, check the <a href="https://www.metoffice.gov.uk/" target="_blank" rel="noopener">Met Office</a>.</p>
-      <p class="footer-small footer-bottom">© <span id="year">2026</span> WeatherOrNot · Powered by <a href="https://aidoo.biz" target="_blank" rel="noopener">ai.doo</a></p>
+      <p class="footer-small">Forecasts from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Readings from official weather stations via <a href="https://www.ogimet.com/" target="_blank" rel="noopener">OGIMET</a>, station list from <a href="https://www.ncei.noaa.gov/products/land-based-station/integrated-surface-database" target="_blank" rel="noopener">NOAA</a>. A game, not a weather service: for anything that matters, check the <a href="https://www.metoffice.gov.uk/" target="_blank" rel="noopener">Met Office</a>.</p>
+      <p class="footer-small footer-bottom">© <span id="year">2026</span> WeatherOrNot · For the UK, the Isle of Man and the Channel Islands · Powered by <a href="https://aidoo.biz" target="_blank" rel="noopener">ai.doo</a></p>
     </footer>
   </div>
 
-  <dialog id="place-dialog" aria-label="Choose your city">
+  <dialog id="place-dialog" aria-label="Choose your town">
     <form method="dialog" class="dialog-head">
       <h2>Where are you?</h2>
       <button class="icon-btn" aria-label="Close">✕</button>
     </form>
-    <input id="place-search" type="search" placeholder="Search for your town or city" autocomplete="off" aria-label="Search for your town or city">
+    <input id="place-search" type="search" placeholder="Search for your town" autocomplete="off" aria-label="Search for your town">
     <ul id="place-results" class="place-list"></ul>
+  </dialog>
+
+  <dialog id="login-dialog" aria-label="Log in">
+    <form method="dialog" class="dialog-head">
+      <h2>Log in</h2>
+      <button class="icon-btn" aria-label="Close">✕</button>
+    </form>
+    <form id="login-form" class="stack">
+      <input name="name" placeholder="Login name" autocomplete="username" required aria-label="Login name">
+      <input name="password" type="password" placeholder="Password" autocomplete="current-password" required aria-label="Password">
+      <button class="btn" type="submit">Log in</button>
+      <p class="error"></p>
+    </form>
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

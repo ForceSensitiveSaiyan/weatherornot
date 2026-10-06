@@ -45,10 +45,10 @@
     }
     async function loadStats() {
       try {
+        const n = (x, word) => `${x} ${word}${x === 1 ? '' : 's'}`;
         const { days, totals } = await call('/api/admin/stats');
         document.getElementById('totals').textContent = `${n(totals.players, 'player')} so far · ${n(totals.savedAccounts, 'saved account')} · ${n(totals.leagues, 'league')} (${n(totals.leagueMembers, 'member')})`;
-        const n = (x, word) => `${x} ${word}${x === 1 ? '' : 's'}`;
-        const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : '–');
+        const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : 'n/a');
         document.getElementById('stats').innerHTML = '<tr><th>Day</th><th>Played</th><th>New</th><th>Came back</th><th>Visits</th><th>First visits</th><th>Shares</th><th>Opened a share</th></tr>' +
           days.map((d) => `<tr><td>${esc(day(d.date))}</td><td>${d.players}</td><td>${d.newPlayers}</td>
             <td title="${d.cameBack} of ${d.playedDayBefore}">${pct(d.cameBack, d.playedDayBefore)}</td>

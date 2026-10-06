@@ -4,6 +4,44 @@ What changed, newest first. Not live yet: the first public version will be 1.0.0
 
 ## Unreleased
 
+### 6 October 2026: second review, simpler and more its own
+
+A designer and a tester reviewed it for simplicity, personality and anything that felt generic. Everything they raised is done except the "later" design ideas in `ROADMAP.md`.
+
+- **Names.** After your first answer: "What do your mates call you?" Tables, invites and shared links now show that name instead of a made-up one like SunnyMeerkat67. Passwords are only for playing on another phone, and Log in is in the footer.
+- **Short share links** (`/r/CODE`) replace the long query-string links. Their WhatsApp preview says "Sam got 2 of 3 in Manchester" and what the weather did. Before the results are in, "Send to the group chat" shares a challenge link instead of the bare home page.
+- **Closing the loop with a friend.** Opening a friend's link shows their result at the top (for new and returning players alike). After answering, a new player gets "Start a league with Sam". League invite previews say who invited you.
+- **The real weather in the share,** in a station-report voice:
+  ```
+  WeatherOrNot · Douglas · Mon 5 Oct
+  Ronaldsway Airport: dry, 13.7°C, gusts 40 mph
+  ☔️✅⭐ 🌡️❌ 💨✅
+  2/3 · 34 pts · 🔥4 · forecast 1/3
+  ```
+  The forecast is only mentioned when you beat it. The day replaces the game number.
+- **A dial on every temperature and wind question:** the number asked in the middle, the forecast as a dot. On results, the measured reading slides onto the same dial. The long grey explanations are now one short line, or none.
+- **"The Forecast" plays along** on each town's weekly table.
+- **Results** lead with what the station measured, then one line on how you did against the forecast ("Two from three. The forecast got all three."). Waiting results sit above the questions, with the header readable over them. New players don't see results for a game they never played.
+- **Cut:**
+  - the yellow tip banner, the small heading above the headline and the feature chips
+  - the "How it works" card, now a fold-out in the footer
+  - the footer logo and tagline, and the repeated "free, no money" lines
+  - game numbers, most decorative emoji, and exclamation marks in messages
+  - corners are less rounded
+- **Copy:**
+  - "That's your three. Results on Thursday morning."
+  - "Copied. Paste it in the group chat."
+  - "Logged in."
+  - "Popular towns", and "town" everywhere instead of "city"
+- **Fixed:**
+  - the streak stayed alive for a day after it had ended
+  - the admin stats table didn't load
+  - shared league tables ranked ties differently from the app
+  - "Something look wrong?" came back after a reload
+  - long names broke mid-word on small phones
+  - a failed league join said nothing
+- **Simulator:** a long-shot punter, weekly tables (`--days=7`) and a points cap option (`--cap`). Capping doubled long shots was tested and not adopted; the numbers are in `ROADMAP.md`.
+
 ### 6 October 2026: ready to host
 
 - **Deploys to the ai.doo Hetzner VPS** the same way as the game scoreboards. On every push to `main`, GitHub Actions does four things:

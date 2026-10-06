@@ -89,7 +89,21 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [x] Fixed: two server crashes from malformed requests; spoofable rate limits (`TRUST_PROXY`); answers split across guests on slow connections; 320px overflow; weather-service-down dead end; midnight lock; scrapped-score mismatches; contrast; keyboard and screen-reader gaps; plus about 20 smaller bugs and polish items
 - [x] QA verdict on the re-test: can ship; UI verdict: looks good once the draft banners come off
 
-**Later (design, not blocking):** shorter one-line hints and rounder question numbers; a "you vs the forecast" stat card; proper night palettes for every sky; a two-column desktop game layout
+## Phase 1e: Second review, simpler and more its own ✅
+
+A designer and a tester reviewed it for simplicity, personality and anything that felt generic or machine-written. Their shared verdict: the game idea is original, but the look and copy read like a template, and the screens over-explained.
+
+- [x] Bugs: the streak stayed alive a day after it had ended; the admin stats table didn't load; shared league tables ranked ties differently from the app; "Something look wrong?" came back after a reload; long names broke mid-word on small phones; a failed league join said nothing; a returning player never saw a friend's shared result
+- [x] Cut: the yellow tip banner, the small heading above the headline, the feature chips, the "How it works" card (now a fold-out in the footer), the footer tagline and logo, game numbers, repeated "free, no money" lines, most decorative emoji and exclamation marks. "How it works" says the coin-flip idea once
+- [x] Results: one line on how you did against the forecast ("Two from three. The forecast got all three."), led by what the station measured; scrapped questions no longer say what you answered; new players don't see a results card for a game they never played; results waiting in the morning sit above the questions
+- [x] Names: "What do your mates call you?" after the first answer, so tables, invites and shared links show a real name. Passwords are only for playing on another phone
+- [x] Friend loop: short share links (`/r/CODE`) with a link preview naming the friend and their score; challenge links before the results; "Start a league with Sam" after playing from a friend's link; invite link previews name who invited you
+- [x] Personality: the shared result carries the real weather in a station-report voice ("Ronaldsway Airport: dry, 13.7°C, gusts 40 mph"); a dial on every temperature and wind question, with the measured reading sliding onto it in the results; "The Forecast" plays along on every town table
+- [x] Checked in the simulator, not changed:
+  - **Capping doubled long shots** (no more than 50 on one question). Without a cap, a punter who always doubles the rain long shot wins a weekly table 4.7% of the time, less than a random guesser (6%). A cap cuts that to 2.3%, but it also cuts the weather nerd's weekly wins from 31% to 29% (and monthly from 59% to 54%) and helps random guessers. Not worth it
+  - **Rounder numbers** ("Will it top 14.5°C?"). Readings come in tenths, so .5 lines would still tie. Rounding would also move the line up to 0.25° away from the calibrated one, and the dial shows the forecast, so players could see which way to lean. Lines stay as calibrated
+
+**Later (design, not blocking):** an overcast-sky link-preview image and app icon in the same voice; sky-tinted cards so the theme carries down the page; proper night palettes for every sky; "The Forecast" in league tables (needs a rule for leagues spread over several towns)
 
 ## Decisions
 

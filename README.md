@@ -8,22 +8,25 @@ What changed and when: `CHANGELOG.md`. Plans and the reasons behind them: `ROADM
 
 ## How it plays
 
-- **First visit.** An intro ("Reckon you can beat the forecast?") explains the game with two example questions, then you pick your town with one tap (Manchester, Glasgow, Douglas, Belfast) or search for it. An Isle of Man phone gets a one-tap "Play Douglas". Search only offers towns within 45 km of a weather station; anything further shows greyed out with the distance.
+- **First visit.** An intro ("Reckon you can beat the forecast?") explains the game with two example questions, then you pick your town with one tap (Manchester, Glasgow, Douglas, Belfast) or search for it. A friend's link puts their result at the top and makes their town the one big button. An Isle of Man phone gets a one-tap "Play Douglas". Search only offers towns within 45 km of a weather station; anything further shows greyed out with the distance.
 - **3 questions a day, built around the forecast** so that just copying it is no better than guessing:
   - ☔ *Will it rain?* (1 mm or more) pays odds. The chance comes from how often UK days with that forecast amount actually saw rain, and a right call pays about 5 ÷ that chance (between 1 and 50). Either side is worth the same on average if all you know is the forecast.
-  - 🌡️ *Will it top 14°C?* and 💨 *Gusts over 22.2 mph?* put the line on the forecast, shifted by how that place's forecasts have been running over its last 30 games (highs in most UK cities beat the forecast more often than not). A right answer pays 10.
-- **No signup to play.** Your first tap makes a guest account (e.g. *BreezyOtter42*). Save it with a name and password to play on other devices.
+  - 🌡️ *Will it top 14°C?* and 💨 *Gusts over 22.2 mph?* put the line on the forecast, shifted by how that place's forecasts have been running over its last 30 games (highs in most UK cities beat the forecast more often than not). A right answer pays 10. Each one shows a dial: the number asked in the middle and the forecast as a dot, so you can see how close it is. On the results, the measured reading slides onto the same dial.
+- **No signup to play.** Your first tap makes a guest account (e.g. *BreezyOtter42*), then the game asks "What do your mates call you?" so tables and shared links show a real name. Add a login name and password only to play on another phone.
 - **Answers close at local midnight.** You can change them until then. Results come in the morning after.
 - **Scoring.** Odds for rain, 10 for temperature and wind. Pick one question a day for ★ **Double points**. If the weather lands exactly on the number asked, the question is void and everyone who answered gets 5 (10 if doubled).
-- **You vs the forecast.** Each result shows how just copying the forecast would have done ("You got 2 of 3. Just going with the forecast got 1.").
-- **Why it's built this way:** `npm run simulate` plays thousands of simulated months with forecast copiers, guessers and players with a small local edge. See `ROADMAP.md` (Phase 1) for the results.
-- **Streaks, results and sharing.** Each morning shows the results with a spoiler-free emoji grid for the group chat (⭐ marks the doubled question), plus a link that opens with "Sam got 2 of 3 in Douglas. Your go?":
+- **You vs the forecast.** Each result says how just copying the forecast would have done ("Two from three. The forecast got all three."), and "The Forecast" plays along on every town's weekly table.
+- **Why it's built this way:** `npm run simulate` plays thousands of simulated leagues with forecast copiers, guessers, a long-shot punter and players with a small local edge (`--days=7` for weekly tables, `--cap=50` to try capping doubled points). See `ROADMAP.md` for the results.
+- **Streaks, results and sharing.** Each morning shows the results, led by what the station measured, with a spoiler-free grid for the group chat (⭐ marks the doubled question). The forecast is only mentioned when you beat it:
   ```
-  WeatherOrNot #7 · Douglas
+  WeatherOrNot · Douglas · Mon 5 Oct
+  Ronaldsway Airport: dry, 13.7°C, gusts 40 mph
   ☔️✅⭐ 🌡️❌ 💨✅
-  2/3 (the forecast got 1/3) · 34 pts · 🔥4
+  2/3 · 34 pts · 🔥4 · forecast 1/3
+  https://playweatherornot.co.uk/r/AB12CD
   ```
-- **Leagues and titles.** Create a league and send the invite link (`/join/ABC123`); picking your town from it joins in the same tap. League tables run weekly, with a monthly champion. Each town crowns last week's best forecaster.
+  The short link (`/r/CODE`) opens with "Sam got 2 of 3 in Douglas on Monday" and a one-tap "Play Douglas", and its WhatsApp preview says the same. Before the results are in, "Send to the group chat" shares a challenge link the same way. Someone who arrives from a friend's link gets "Start a league with Sam" once they've answered.
+- **Leagues and titles.** Create a league and send the invite link (`/join/ABC123`); picking your town from it joins in the same tap, and the link preview says who invited you. League tables run weekly, with a monthly champion. Each town crowns last week's best forecaster.
 - **Problem reports.** "Something look wrong? Tell us" on results. On the admin page we can scrap a question for everyone if a station reading is clearly wrong.
 - **The page looks like tomorrow's sky** (sunny, cloudy, rain, snow, storm, fog), and it can be installed to a phone's home screen.
 
@@ -84,6 +87,7 @@ src/places.js     city search (Open-Meteo geocoding) and the popular-cities list
 src/weather.js    Open-Meteo and mock weather providers
 src/time.js       local dates, local midnight, game numbers
 src/stats.js      the admin page's numbers (players, comebacks, shares)
+public/words.js   wording shared by the page and the link previews (weather line, score line)
 src/backup.js     daily database copies
 Dockerfile        container for hosting
 compose.yaml      how the VPS runs it

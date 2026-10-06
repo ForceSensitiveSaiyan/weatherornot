@@ -114,7 +114,7 @@ test('guests can play, then save their account and log in elsewhere', () => {
   assert.throws(() => game.login(guest.name, ''), /Wrong name/);
 
   game.saveAccount(guest.id, 'keith', 'secret1');
-  assert.deepEqual(game.userForToken(token), { id: guest.id, name: 'keith', guest: false });
+  assert.deepEqual(game.userForToken(token), { id: guest.id, name: 'keith', guest: false, named: false, account: 'keith' });
   assert.throws(() => game.saveAccount(guest.id, 'keith2', 'secret1'), /already saved/);
   assert.equal(game.userForToken(game.login('KEITH', 'secret1')).id, guest.id);
 
@@ -136,6 +136,12 @@ test('streak counts consecutive days played', async () => {
   await playDay('2026-10-06T12:00:00Z', '2026-10-06', '2026-10-07');
   await playDay('2026-10-07T12:00:00Z', '2026-10-07', '2026-10-08');
   assert.equal(game.stats(u.id).streak, 3);
+  // 8 Oct: they haven't answered for the 9th yet, but played the 8th's game, so it's alive.
+  clock.now = new Date('2026-10-08T20:00:00Z');
+  assert.equal(game.stats(u.id).streak, 3);
+  // 9 Oct: they missed the 9th's game, so the streak has ended.
+  clock.now = new Date('2026-10-09T09:00:00Z');
+  assert.equal(game.stats(u.id).streak, 0);
   clock.now = new Date('2026-10-10T12:00:00Z');
   assert.equal(game.stats(u.id).streak, 0);
 });
@@ -248,6 +254,9 @@ test('you vs the forecast, weekly city champion and monthly league champion', as
   // The forecast alone: rain YES (right), temp NO since 17.8 < 18.2 (wrong), wind NO (wrong).
   assert.deepEqual(annView.lastRound.forecast, { correct: 1, total: 3 });
   assert.deepEqual(annView.stats.vsForecast, { calls: 3, you: 3, forecast: 1 });
+  // The Forecast as a player this week: only its rain call came in, at 7.
+  assert.equal(annView.forecastPoints, 7);
+  assert.deepEqual(annView.leaderboard.map((r) => [r.name, r.points, r.me]), [[ann.name, 27, true], [ben.name, 0, false]]);
   assert.equal(annView.champion, null, 'no finished week yet');
 
   // The next Monday, last week's top scorer in London is the champion.
@@ -361,4 +370,40 @@ test('a guest logging in keeps the account\'s own double if both doubled the sam
   const v = await game.view(account.id, LONDON);
   assert.equal(v.round.banker, 'rain');
   assert.equal(v.round.questions.find((q) => q.key === 'temp').myPick, 1);
+});
+
+test('names: friends see a chosen name on tables, links and invites', async () => {
+  const { game, player } = setup();
+  const ann = player();
+  assert.equal(ann.named, false);
+  assert.equal(game.setName(ann.id, '  Sam   Jones '), 'Sam Jones');
+  assert.throws(() => game.setName(ann.id, ''), /up to 20/);
+  assert.throws(() => game.setName(ann.id, '<script>'), /up to 20/);
+  game.setName(ann.id, 'Siân');
+  const league = game.createLeague(ann.id, 'Quayside');
+  assert.equal(game.leaguePreview(league.code).owner, 'Siân');
+  assert.equal(game.myLeagues(ann.id)[0].standings[0].name, 'Siân');
+});
+
+test('share links: a challenge before the results, then the result itself', async () => {
+  const { game, clock, weather, player } = setup();
+  const ann = player();
+  game.setName(ann.id, 'Sam');
+  const { round } = await game.view(ann.id, LONDON);
+  assert.throws(() => game.createShare(ann.id, round.id), /Something went wrong/, 'only for games you answered');
+  for (const key of ['rain', 'temp', 'wind']) game.makePick(ann.id, round.id, key, 1);
+  const code = game.createShare(ann.id, round.id);
+  assert.match(code, /^[A-Z2-9]{6}$/);
+  assert.equal(game.createShare(ann.id, round.id), code, 'same game, same link');
+
+  let share = game.shareView(code.toLowerCase());
+  assert.deepEqual([share.name, share.place.name, share.settled, share.got], ['Sam', 'London', false, null]);
+
+  clock.now = new Date('2026-10-07T07:00:00Z');
+  weather.set('2026-10-06', { ...mild, tmax: 19, precip: 6, gust: 50 });
+  await game.settleRounds();
+  share = game.shareView(code);
+  assert.deepEqual([share.settled, share.got, share.of, share.points, share.forecast], [true, 3, 3, 27, 1]);
+  assert.deepEqual(share.questions.map((x) => x.observed), [6, 19, 31.1]);
+  assert.throws(() => game.shareView('NOPE22'), /doesn't work/);
 });

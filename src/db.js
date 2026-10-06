@@ -19,6 +19,7 @@ export function openDb(path = ':memory:') {
       id         INTEGER PRIMARY KEY,
       name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
       pass_hash  TEXT,                    -- NULL for guests who haven't saved their account
+      display    TEXT,                    -- what friends see ("Sam"); NULL until they pick one
       salt       TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -81,6 +82,14 @@ export function openDb(path = ':memory:') {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (round_id, user_id)
     );
+    -- Short links for a shared result or challenge: /r/<code>.
+    CREATE TABLE IF NOT EXISTS shares (
+      code       TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      round_id   INTEGER NOT NULL REFERENCES rounds(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (user_id, round_id)
+    );
     CREATE TABLE IF NOT EXISTS leagues (
       id         INTEGER PRIMARY KEY,
       name       TEXT NOT NULL,
@@ -95,6 +104,10 @@ export function openDb(path = ':memory:') {
       PRIMARY KEY (league_id, user_id)
     );
   `);
+  // Added after the first databases were made.
+  if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'display')) {
+    db.exec('ALTER TABLE users ADD COLUMN display TEXT');
+  }
   return db;
 }
 

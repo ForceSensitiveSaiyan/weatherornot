@@ -140,3 +140,35 @@ test('shared links can look up a place by id', async (t) => {
   assert.equal(place.name, 'Douglas');
   assert.equal((await fetch(`${base}/api/places/info?id=gn:1`)).status, 404);
 });
+
+test('names, short share links and link previews that say who sent them', async (t) => {
+  const game = createGame({ db: openDb(), provider: mockProvider(), geocoder: mockGeocoder() });
+  const server = createServer(createApp(game)).listen(0);
+  t.after(() => server.close());
+  const base = `http://localhost:${server.address().port}`;
+  const post = (path, body, cookie) => fetch(`${base}${path}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(cookie && { cookie }) }, body: JSON.stringify(body),
+  });
+
+  assert.equal((await post('/api/name', { name: 'Sam' })).status, 401, 'play first');
+  const { round } = await (await fetch(`${base}/api/game?place=gn:2643743`)).json();
+  const pick = await post('/api/picks', { roundId: round.id, key: 'rain', pick: 1 });
+  const cookie = pick.headers.get('set-cookie').split(';')[0];
+  assert.equal((await post('/api/name', { name: '<b>' }, cookie)).status, 400);
+  assert.deepEqual(await (await post('/api/name', { name: 'Sam' }, cookie)).json(), { name: 'Sam' });
+
+  const { code } = await (await post('/api/shares', { roundId: round.id }, cookie)).json();
+  const page = await (await fetch(`${base}/r/${code}`)).text();
+  assert.match(page, /<meta property="og:title" content="Sam has answered tomorrow&#39;s weather questions for London">/);
+  assert.match(page, new RegExp(`<meta property="og:url" content="${base}/r/${code}">`));
+  const { share } = await (await fetch(`${base}/api/shares/view?code=${code}`)).json();
+  assert.equal(share.name, 'Sam');
+
+  // Unknown codes still get the app, with the ordinary preview.
+  const unknown = await fetch(`${base}/r/ZZZZZZ`);
+  assert.equal(unknown.status, 200);
+  assert.match(await unknown.text(), /<meta property="og:title" content="WeatherOrNot">/);
+
+  const { league } = await (await post('/api/leagues', { name: 'Quayside' }, cookie)).json();
+  assert.match(await (await fetch(`${base}/join/${league.code}`)).text(), /og:title" content="Sam invited you to Quayside"/);
+});

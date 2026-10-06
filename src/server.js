@@ -11,6 +11,7 @@ import { synopObserver } from './observations.js';
 import { createStats } from './stats.js';
 import { backupDaily } from './backup.js';
 import { localDate } from './time.js';
+import { weatherLine, sourceName, shortDay } from '../public/words.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const TICK_MS = 10 * 60 * 1000;
@@ -72,6 +73,15 @@ export function createApp(game, { limiter = rateLimiter(), stats = null } = {}) 
       game.dismissReport(Number(ctx.body.reportId));
       return { ok: true };
     },
+    'POST /api/name': (ctx) => {
+      limiter(ctx.ip, 'name', 30);
+      return { name: game.setName(requireUser(ctx.user).id, ctx.body.name) };
+    },
+    'POST /api/shares': (ctx) => {
+      limiter(ctx.ip, 'share', 60);
+      return { code: game.createShare(requireUser(ctx.user).id, Number(ctx.body.roundId)) };
+    },
+    'GET /api/shares/view': ({ query }) => ({ share: game.shareView(query.get('code')) }),
     'POST /api/account': (ctx) => {
       limiter(ctx.ip, 'account', 20);
       game.validateCredentials(ctx.body.name, ctx.body.password);
@@ -130,6 +140,33 @@ export function createApp(game, { limiter = rateLimiter(), stats = null } = {}) 
     return ctx.user;
   }
 
+  // Link previews (WhatsApp, iMessage) for share and invite links say who
+  // sent them, instead of the generic card.
+  function previewFor(path) {
+    try {
+      const shared = path.match(/^\/r\/([A-Za-z0-9]{6})\/?$/)?.[1];
+      if (shared) {
+        const s = game.shareView(shared);
+        if (!s.settled) {
+          return { title: `${s.name} has answered tomorrow's weather questions for ${s.place.name}`, description: 'Three yes or no questions. Your go. Free, no signup.' };
+        }
+        return {
+          title: `${s.name} got ${s.got} of ${s.of} in ${s.place.name}`,
+          description: `${shortDay(s.date)}${s.source?.type === 'station' ? ` at ${sourceName(s.source)}` : ''}: ${weatherLine(s.questions)}. Tomorrow's three questions are open.`,
+        };
+      }
+      const invite = path.match(/^\/join\/([A-Za-z0-9]{6})\/?$/)?.[1];
+      if (invite) {
+        const l = game.leaguePreview(invite);
+        return {
+          title: `${l.owner ? `${l.owner} invited you to ` : ''}${l.name}`,
+          description: `${l.members} ${l.members === 1 ? 'player' : 'players'} guessing tomorrow's weather. Three questions a day, free, no signup.`,
+        };
+      }
+    } catch { /* unknown code: the generic card */ }
+    return null;
+  }
+
   return async (req, res) => {
     let url;
     try {
@@ -140,7 +177,7 @@ export function createApp(game, { limiter = rateLimiter(), stats = null } = {}) 
     const handler = routes[`${req.method} ${url.pathname}`];
     if (!handler) {
       if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
-      return serveStatic(url, req, res).catch((err) => {
+      return serveStatic(url, req, res, previewFor).catch((err) => {
         console.error(err);
         if (!res.headersSent) send(res, 500, { error: 'Something went wrong' });
       });
@@ -244,9 +281,15 @@ function siteOrigin(req) {
 // Real files are served as-is; any other path without an extension (like an
 // invite link, /join/ABC123) gets the app, which reads the URL itself.
 // The app's own pages; any other path without a file extension is a 404.
-const APP_PATHS = /^\/(join\/[^/]*\/?)?$/;
+const APP_PATHS = /^\/((join|r)\/[^/]*\/?)?$/;
 
-async function serveStatic(url, req, res) {
+const DEFAULT_PREVIEW = {
+  title: 'WeatherOrNot',
+  description: 'Reckon you can beat the forecast? Three questions on tomorrow\'s weather where you live. Free, no signup.',
+};
+const escAttr = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+async function serveStatic(url, req, res, previewFor = () => null) {
   let path;
   try {
     path = decodeURIComponent(url.pathname);
@@ -261,7 +304,12 @@ async function serveStatic(url, req, res) {
   }
   try {
     let data = await readFile(join(PUBLIC_DIR, rel));
-    if (rel === 'index.html') data = data.toString().replaceAll('{{ORIGIN}}', siteOrigin(req));
+    if (rel === 'index.html') {
+      const preview = previewFor(path) ?? DEFAULT_PREVIEW;
+      data = data.toString().replaceAll('{{ORIGIN}}', siteOrigin(req))
+        .replaceAll('{{OG_TITLE}}', escAttr(preview.title)).replaceAll('{{OG_DESC}}', escAttr(preview.description))
+        .replaceAll('{{OG_PATH}}', escAttr(url.pathname));
+    }
     res.writeHead(200, {
       'Content-Type': TYPES[extname(rel)] ?? 'application/octet-stream',
       ...(rel.startsWith('fonts/') && { 'Cache-Control': 'public, max-age=31536000, immutable' }),

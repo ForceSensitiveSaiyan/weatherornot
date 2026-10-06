@@ -33,7 +33,8 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   const stationTries = new Map(); // round id -> last attempt (ms)
   const q = {
     userByName: db.prepare('SELECT * FROM users WHERE name = ?'),
-    userById: db.prepare('SELECT name FROM users WHERE id = ?'),
+    userById: db.prepare('SELECT COALESCE(display, name) AS name FROM users WHERE id = ?'),
+    setDisplay: db.prepare('UPDATE users SET display = ? WHERE id = ?'),
     insertUser: db.prepare('INSERT INTO users (name, pass_hash, salt) VALUES (?, ?, ?)'),
     guestOpenRounds: db.prepare(`
       SELECT DISTINCT p.round_id FROM picks p JOIN rounds r ON r.id = p.round_id
@@ -48,7 +49,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     claimUser: db.prepare('UPDATE users SET name = ?, pass_hash = ?, salt = ? WHERE id = ? AND pass_hash IS NULL'),
     insertSession: db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)'),
     sessionUser: db.prepare(
-      'SELECT u.id, u.name, u.pass_hash FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?'),
+      'SELECT u.id, u.name, u.display, u.pass_hash FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?'),
     deleteSession: db.prepare('DELETE FROM sessions WHERE token = ?'),
     upsertPlace: db.prepare(`
       INSERT INTO places (id, name, country, lat, lon, tz) VALUES (?, ?, ?, ?, ?, ?)
@@ -65,7 +66,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       SELECT questions, results FROM rounds WHERE place_id = ? AND status = 'settled' ORDER BY date DESC LIMIT ?`),
     insertReport: db.prepare('INSERT OR IGNORE INTO reports (round_id, user_id, key, message) VALUES (?, ?, ?, ?)'),
     openReports: db.prepare(`
-      SELECT rp.id, rp.round_id, rp.key, rp.message, rp.created_at, u.name AS user, r.date, r.questions, r.results,
+      SELECT rp.id, rp.round_id, rp.key, rp.message, rp.created_at, COALESCE(u.display, u.name) AS user, r.date, r.questions, r.results,
              p.name AS place
       FROM reports rp JOIN rounds r ON r.id = rp.round_id JOIN users u ON u.id = rp.user_id
       JOIN places p ON p.id = r.place_id
@@ -96,13 +97,21 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       SELECT DISTINCT r.date FROM picks p JOIN rounds r ON r.id = p.round_id
       WHERE p.user_id = ? ORDER BY r.date DESC LIMIT 400`),
     placeLeaderboard: db.prepare(`
-      SELECT u.name, SUM(s.points) AS points, COUNT(*) AS played
+      SELECT u.id AS uid, COALESCE(u.display, u.name) AS name, SUM(s.points) AS points, COUNT(*) AS played
       FROM scores s JOIN rounds r ON r.id = s.round_id JOIN users u ON u.id = s.user_id
       WHERE r.place_id = ? AND r.date BETWEEN ? AND ?
       GROUP BY s.user_id ORDER BY points DESC, played DESC, u.id LIMIT 10`),
     recentScores: db.prepare(`
       SELECT s.detail, r.results FROM scores s JOIN rounds r ON r.id = s.round_id
       WHERE s.user_id = ? AND r.date >= ?`),
+    settledBetween: db.prepare(`
+      SELECT questions, results FROM rounds WHERE place_id = ? AND status = 'settled' AND date BETWEEN ? AND ?`),
+    shareFor: db.prepare('SELECT code FROM shares WHERE user_id = ? AND round_id = ?'),
+    shareCodeExists: db.prepare('SELECT 1 FROM shares WHERE code = ?'),
+    insertShare: db.prepare('INSERT INTO shares (code, user_id, round_id) VALUES (?, ?, ?)'),
+    share: db.prepare(`
+      SELECT s.user_id, COALESCE(u.display, u.name) AS name, r.* FROM shares s
+      JOIN users u ON u.id = s.user_id JOIN rounds r ON r.id = s.round_id WHERE s.code = ?`),
     insertLeague: db.prepare('INSERT INTO leagues (name, code, owner_id) VALUES (?, ?, ?)'),
     leagueByCode: db.prepare('SELECT * FROM leagues WHERE code = ?'),
     leagueCodeExists: db.prepare('SELECT 1 FROM leagues WHERE code = ?'),
@@ -112,7 +121,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       SELECT l.id, l.name, l.code, l.owner_id FROM leagues l
       JOIN league_members lm ON lm.league_id = l.id WHERE lm.user_id = ? ORDER BY l.name`),
     standings: db.prepare(`
-      SELECT u.name, COALESCE(SUM(x.points), 0) AS points, COUNT(x.round_id) AS played
+      SELECT u.id AS uid, COALESCE(u.display, u.name) AS name, COALESCE(SUM(x.points), 0) AS points, COUNT(x.round_id) AS played
       FROM league_members lm JOIN users u ON u.id = lm.user_id
       LEFT JOIN (SELECT s.user_id, s.points, s.round_id FROM scores s JOIN rounds r ON r.id = s.round_id
                  WHERE r.date BETWEEN ? AND ?) x ON x.user_id = u.id
@@ -122,7 +131,13 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   for (const p of POPULAR) savePlace(p);
 
   const utcDay = () => now().toISOString().slice(0, 10);
-  const publicUser = (u) => u && { id: u.id, name: u.name, guest: u.pass_hash == null };
+  // name is what friends see; account is the login name, once saved.
+  const publicUser = (u) => u && {
+    id: u.id, name: u.display ?? u.name, guest: u.pass_hash == null,
+    named: u.display != null, account: u.pass_hash == null ? null : u.name,
+  };
+  // Table rows say which one is you, without sending user ids.
+  const rowsFor = (rows, userId) => rows.map(({ uid, ...r }) => ({ ...r, me: uid === userId }));
 
   // ---- accounts ----------------------------------------------------------
 
@@ -160,6 +175,16 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       throw new GameError('Wrong name or password', 401);
     }
     return startSession(user.id);
+  }
+
+  // What friends see on tables and shared links: a first name or nickname.
+  function setName(userId, display) {
+    display = String(display ?? '').trim().replace(/\s+/g, ' ');
+    if (!/^[\p{L}\p{M}\p{N} '’.-]{1,20}$/u.test(display)) {
+      throw new GameError('Names can be up to 20 letters, numbers and spaces.');
+    }
+    q.setDisplay.run(display, userId);
+    return display;
   }
 
   function startSession(userId) {
@@ -315,9 +340,59 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       round: roundView(round, place, userId),
       lastRound: last ? roundView(last, place, userId) : null,
       station: stationsNear(place, 1)[0] ?? null,
-      leaderboard: q.placeLeaderboard.all(place.id, week.from, week.to),
+      leaderboard: rowsFor(q.placeLeaderboard.all(place.id, week.from, week.to), userId),
+      forecastPoints: forecastPoints(place.id, week.from, week.to),
       champion: champion(q.placeLeaderboard.all(place.id, addDays(week.from, -7), addDays(week.from, -1))),
       stats: userId ? stats(userId) : null,
+    };
+  }
+
+  // "The Forecast" as a player: its points this week if it had answered
+  // every question by just going with the forecast, never doubling.
+  function forecastPoints(placeId, from, to) {
+    let points = 0;
+    for (const r of q.settledBetween.all(placeId, from, to)) {
+      const questions = JSON.parse(r.questions);
+      const picks = Object.fromEntries(questions.map((x) => [x.key, forecastCall(x)]));
+      points += scoreDay(questions, JSON.parse(r.results), picks, null).points;
+    }
+    return points;
+  }
+
+  // ---- share links ---------------------------------------------------------
+
+  // A short link to your result (or, before it settles, your challenge) for
+  // one game: /r/<code>. The same game always gets the same code.
+  function createShare(userId, roundId) {
+    const round = q.round.get(Number(roundId));
+    if (!round || !q.hasPicks.get(round.id, userId)) throw new GameError(OOPS, 404);
+    const existing = q.shareFor.get(userId, round.id);
+    if (existing) return existing.code;
+    let code;
+    do {
+      code = Array.from({ length: 6 }, () => pick(CODE_ALPHABET)).join('');
+    } while (q.shareCodeExists.get(code));
+    q.insertShare.run(code, userId, round.id);
+    return code;
+  }
+
+  // What a share link shows: who, where, and how they did once it's settled.
+  function shareView(code) {
+    const row = q.share.get(String(code ?? '').trim().toUpperCase());
+    if (!row) throw new GameError("That link doesn't work. Ask for a fresh one?", 404);
+    const place = q.place.get(row.place_id);
+    const view = roundView(row, place, row.user_id);
+    return {
+      name: row.name,
+      place: publicPlace(place),
+      date: row.date,
+      settled: row.status === 'settled',
+      got: view.score?.correct ?? null,
+      of: view.questions.filter((x) => x.result && x.result.answer != null).length,
+      points: view.score?.points ?? null,
+      forecast: view.forecast?.correct ?? null,
+      source: view.source,
+      questions: view.questions.map(({ key, unit, result }) => ({ key, unit, observed: result?.observed ?? null })),
     };
   }
 
@@ -480,11 +555,12 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
 
   // ---- stats & leagues -------------------------------------------------
 
-  // Days in a row with a game played; still alive if the latest is no older than yesterday.
+  // Days in a row with a game played. You play today for tomorrow's game, so
+  // the streak is alive as long as you played today's game (yesterday).
   function stats(userId) {
     const dates = q.pickDates.all(userId).map((r) => r.date);
     let streak = 0;
-    if (dates.length && dates[0] >= addDays(utcDay(), -1)) {
+    if (dates.length && dates[0] >= localDate('Europe/London', now())) {
       streak = 1;
       while (streak < dates.length && dates[streak] === addDays(dates[0], -streak)) streak++;
     }
@@ -566,7 +642,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     const week = thisWeek();
     return q.userLeagues.all(userId).map((l) => ({
       id: l.id, name: l.name, code: l.code, isOwner: l.owner_id === userId,
-      standings: q.standings.all(week.from, week.to, l.id),
+      standings: rowsFor(q.standings.all(week.from, week.to, l.id), userId),
       champion: monthChampion(l.id),
     }));
   }
@@ -581,7 +657,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   }
 
   return {
-    createGuest, saveAccount, login, logout, userForToken,
+    createGuest, saveAccount, login, logout, userForToken, setName, createShare, shareView,
     searchPlaces, popularPlaces, placeInfo, view, makePick, setBanker, settleRounds, stats,
     checkPick, checkBanker, checkLeagueName, validateCredentials, mergeGuest,
     reportProblem, listReports, voidQuestion, dismissReport,

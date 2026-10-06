@@ -13,15 +13,21 @@
 //                                    rain odds and biases measured that way
 //   --skill=<local>,<nerd>           how much better than the forecast the
 //                                    "edge" players are (default 0.08,0.15)
+//   --days=7                         league length in days (default 30)
+//   --cap=<points>                   most one question can score, doubled
+//                                    or not (default: the game's MAX_POINTS)
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { questionsFor, resolveQuestion, rainChance, PRIOR_BIAS, observeFor } from '../src/questions.js';
-import { scoreDay } from '../src/scoring.js';
+import { scoreDay, MAX_POINTS } from '../src/scoring.js';
 import { biasFrom } from '../src/bias.js';
 import { POPULAR } from '../src/places.js';
 import { stationsNear, parseSynop, summariseDay } from '../src/observations.js';
 import { addDays } from '../src/time.js';
 
-const SEASON_DAYS = 30;
+const daysArg = process.argv.find((a) => a.startsWith('--days='));
+const SEASON_DAYS = daysArg ? Number(daysArg.slice(7)) : 30;
+const capArg = process.argv.find((a) => a.startsWith('--cap='));
+const CAP = capArg ? Number(capArg.slice(6)) : MAX_POINTS;
 const SEASONS = 2000;
 
 // ---- randomness ------------------------------------------------------------
@@ -147,10 +153,11 @@ const STRATEGIES = {
   yes: { label: 'Always says yes' },
   local: { label: 'Local knowledge (small edge)', skill: 0.08, noise: 0.8 },
   sharp: { label: 'Weather nerd (bigger edge)', skill: 0.15, noise: 0.6 },
+  punter: { label: 'Long-shot punter (doubles rain)' },
 };
 const skillArg = process.argv.find((a) => a.startsWith('--skill='));
 if (skillArg) [STRATEGIES.local.skill, STRATEGIES.sharp.skill] = skillArg.slice(8).split(',').map(Number);
-const LEAGUE = ['copier', 'copier', 'copier', 'random', 'random', 'yes', 'local', 'local', 'local', 'sharp'];
+const LEAGUE = ['copier', 'copier', 'copier', 'random', 'random', 'yes', 'local', 'local', 'local', 'sharp', 'punter'];
 
 const SCALE = { temp: 1.0, wind: 4 };
 
@@ -160,7 +167,8 @@ function play(kind, questions, day) {
   const picks = {};
   const edge = {};
   for (const q of questions) {
-    if (kind === 'random') picks[q.key] = coin();
+    if (kind === 'random' || (kind === 'punter' && q.key !== 'rain')) picks[q.key] = coin();
+    else if (kind === 'punter') picks.rain = q.pays.yes >= q.pays.no ? 1 : 0;
     else if (kind === 'yes') picks[q.key] = 1;
     else if (q.key === 'rain') {
       let p = q.chance;
@@ -176,7 +184,8 @@ function play(kind, questions, day) {
     }
   }
   const keys = questions.map((q) => q.key);
-  const banker = s.skill ? keys.reduce((a, b) => (edge[a] >= edge[b] ? a : b)) : kind === 'yes' ? 'temp' : keys[Math.floor(rand() * keys.length)];
+  const banker = s.skill ? keys.reduce((a, b) => (edge[a] >= edge[b] ? a : b))
+    : kind === 'yes' ? 'temp' : kind === 'punter' ? 'rain' : keys[Math.floor(rand() * keys.length)];
   return { picks, banker };
 }
 
@@ -206,7 +215,7 @@ function runSeasons(cities, seasons, { calibrate }) {
       }
       const pts = LEAGUE.map((kind) => {
         const { picks, banker } = play(kind, questions, day);
-        return scoreDay(questions, results, picks, banker).points;
+        return scoreDay(questions, results, picks, banker, { cap: CAP }).points;
       });
       pts.forEach((x, i) => { totals[i] += x; });
       const top = Math.max(...pts);
@@ -288,6 +297,6 @@ if (real) {
   console.log('Synthetic UK autumn weather (biased like the real data)');
 }
 const seasons = real ? 1000 : SEASONS;
-console.log(`${seasons} simulated months, leagues of ${LEAGUE.length}. Prior bias: highs ${PRIOR_BIAS.temp}°C, gusts ${PRIOR_BIAS.wind} mph.`);
+console.log(`${seasons} simulated leagues of ${SEASON_DAYS} days, ${LEAGUE.length} players, most points on one question ${CAP}. Prior bias: highs ${PRIOR_BIAS.temp}°C, gusts ${PRIOR_BIAS.wind} mph.`);
 report('Lines exactly on the forecast (no calibration)', runSeasons(cities, seasons, { calibrate: false }));
 report('Lines shifted by each city\'s recent bias (what the app does)', runSeasons(cities, seasons, { calibrate: true }));
