@@ -121,7 +121,7 @@ function render() {
     ? `🏆 Last week's best forecaster: <strong>${game.champion.names.map(esc).join(' and ')}</strong> (${game.champion.points} pts)`
     : '';
   $('#hero-station').textContent = game.station
-    ? `Results from ${game.station.name} weather station · ${game.station.km}\u00a0km away`
+    ? `Results: ${game.station.name} · ${game.station.km}\u00a0km`
     : 'No weather station nearby, so results use the forecast model';
   renderLeagues();
   renderAccount();
@@ -580,6 +580,8 @@ function showIntro({ guess, from }) {
   };
   // A friend's shared result, or a town we can guess, becomes a one-tap start.
   const start = from ? { id: from.place, name: from.town } : guess.match;
+  // Don't repeat the one-tap town as a chip underneath it.
+  if (start) $(`.city[data-intro-place="${start.id}"]`)?.remove();
   if (start) {
     $('#intro-guess').hidden = false;
     $('#intro-guess').textContent = `📍 Play ${start.name}`;

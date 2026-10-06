@@ -368,3 +368,9 @@ form.inline input { width: 100%; min-width: 0; }
   .cities { display: grid; grid-template-columns: 1fr 1fr; }
   .city { width: 100%; }
 }
+@media (prefers-color-scheme: dark) {
+  /* Light skies get a dark bottom at night, so the footer stays readable. */
+  :root[data-sky='snow'] { --sky-bottom: #2e3c52; }
+  :root[data-sky='fog'] { --sky-bottom: #39414d; }
+  :root[data-sky='sunny'] { --sky-bottom: #3a3222; }
+}
