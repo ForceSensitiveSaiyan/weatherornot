@@ -91,8 +91,9 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [ ] Database backups
 - [ ] Basic, privacy-friendly analytics: do people come back the next day? Do they share?
 - [x] Footer with credits, Privacy and Terms pages, "Powered by ai.doo"
-- [ ] Privacy notice and terms are drafts: fill in who runs the site and a contact address, and get them checked
-- [ ] Link "Powered by ai.doo" to ai.doo's site (address to confirm)
+- [x] Privacy and terms name ai.doo as the operator, contact hello@aidoo.biz
+- [ ] Get the privacy notice and terms checked before launch
+- [x] "Powered by ai.doo" links to aidoo.biz; footer has a Contact link
 - [ ] Decide the Open-Meteo plan (free is non-commercial only)
 
 ## Phase 3: Bring people back
