@@ -1,5 +1,7 @@
 # WeatherOrNot roadmap
 
+What's been done is also listed in `CHANGELOG.md`; this file is the plan and the reasoning.
+
 The goal: a free daily weather game that UK friend groups play every morning and share in their group chats. We test with 20 to 30 people before pushing it anywhere bigger.
 
 Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later

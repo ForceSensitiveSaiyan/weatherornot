@@ -1,7 +1,7 @@
 {
   "name": "weatherornot",
   "version": "0.1.0",
-  "description": "Bet points on tomorrow's weather. Free-to-play, pari-mutuel pools, settled from real weather data.",
+  "description": "A free daily game: 3 quick questions on tomorrow's weather in the UK, settled on official weather station readings.",
   "type": "module",
   "private": true,
   "engines": {

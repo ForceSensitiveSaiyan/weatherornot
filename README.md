@@ -1,31 +1,36 @@
 # ☁️ WeatherOrNot
 
-A free daily game. Make 3 calls on **tomorrow's** weather where you live, keep your streak going and beat your mates. No money involved.
+A free daily game run by [ai.doo](https://aidoo.biz). Answer 3 quick questions on **tomorrow's** weather where you live, try to beat the forecast, keep your streak going and beat your mates. No money involved.
+
+What changed and when: `CHANGELOG.md`. Plans and the reasons behind them: `ROADMAP.md`. Putting it live: `deploy/DEPLOY.md`.
 
 **For the UK, the Isle of Man and the Channel Islands only.** That's where games can be settled on official weather station reports. Temperatures are in °C, wind in mph, dates in UK format.
 
 ## How it plays
 
-- **Your city.** Search any town or city. On a first visit, UK players pick from the popular UK cities (the whole UK shares one time zone, so there's no way to guess). Elsewhere, the app guesses from the device's time zone.
-- **3 calls a day, and the forecast sets the line instead of giving the answer**, so copying it is no better than guessing:
+- **First visit.** An intro ("Reckon you can beat the forecast?") explains the game with two example questions, then you pick your town with one tap (Manchester, Glasgow, Douglas, Belfast) or search for it. An Isle of Man phone gets a one-tap "Play Douglas". Search only offers towns within 45 km of a weather station; anything further shows greyed out with the distance.
+- **3 questions a day, built around the forecast** so that just copying it is no better than guessing:
   - ☔ *Will it rain?* (1 mm or more) pays odds. The chance comes from how often UK days with that forecast amount actually saw rain, and a right call pays about 5 ÷ that chance (between 1 and 50). Either side is worth the same on average if all you know is the forecast.
-  - 🌡️ *Will it top 14°C?* and 💨 *Gusts over 22.2 mph?* put the line on the forecast, shifted by how that place's forecasts have been running over its last 30 games (highs in most UK cities beat the forecast more often than not). A right call pays 10.
+  - 🌡️ *Will it top 14°C?* and 💨 *Gusts over 22.2 mph?* put the line on the forecast, shifted by how that place's forecasts have been running over its last 30 games (highs in most UK cities beat the forecast more often than not). A right answer pays 10.
 - **No signup to play.** Your first tap makes a guest account (e.g. *BreezyOtter42*). Save it with a name and password to play on other devices.
-- **Locks at local midnight.** You can change your calls until then. Results come in once the day is over.
-- **Scoring.** Odds for rain, 10 for the lines. Pick one call a day as your ★ **banker** for double points. If the weather lands exactly on a line, the call is void and everyone who made it gets 5.
+- **Answers close at local midnight.** You can change them until then. Results come in the morning after.
+- **Scoring.** Odds for rain, 10 for temperature and wind. Pick one question a day for ★ **Double points**. If the weather lands exactly on the number asked, the question is void and everyone who answered gets 5 (10 if doubled).
+- **You vs the forecast.** Each result shows how just copying the forecast would have done ("You got 2 of 3. Just going with the forecast got 1.").
 - **Why it's built this way:** `npm run simulate` plays thousands of simulated months with forecast copiers, guessers and players with a small local edge. See `ROADMAP.md` (Phase 1) for the results.
-- **Streaks, results and sharing.** Each morning shows yesterday's results with a spoiler-free emoji grid to share:
+- **Streaks, results and sharing.** Each morning shows the results with a spoiler-free emoji grid for the group chat (⭐ marks the doubled question), plus a link that opens with "Sam got 2 of 3 in Douglas. Your go?":
   ```
-  WeatherOrNot #4 · Cape Town
-  ☔✅ 🌡️❌ ❄️✅
-  2/3 · 20 pts · 🔥2
+  WeatherOrNot #7 · Douglas
+  ☔️✅⭐ 🌡️❌ 💨✅
+  2/3 (the forecast got 1/3) · 34 pts · 🔥4
   ```
-- **Leagues.** Create one and send the invite link (`/join/ABC123`). Friends who open it see the league and join with one tap.
+- **Leagues and titles.** Create a league and send the invite link (`/join/ABC123`); picking your town from it joins in the same tap. League tables run weekly, with a monthly champion. Each town crowns last week's best forecaster.
+- **Problem reports.** "Something look wrong? Tell us" on results. On the admin page we can scrap a question for everyone if a station reading is clearly wrong.
 - **The page looks like tomorrow's sky** (sunny, cloudy, rain, snow, storm, fog), and it can be installed to a phone's home screen.
 
 ## Where the results come from
 
-Each game settles on the nearest official weather station within 50 km (hourly SYNOP reports: the day's high, rainfall and strongest gust), via [OGIMET](https://www.ogimet.com/)'s archive of WMO reports. Station locations come from NOAA's ISD station list (`src/data/uk-stations.json`). If no nearby station has a complete day 36 hours after midnight, the game falls back to the forecast model's own estimate, and the result says so. 
+Each game settles on the nearest official weather station within 50 km (hourly SYNOP reports: the day's high, rainfall and strongest gust), via [OGIMET](https://www.ogimet.com/)'s archive of WMO reports. Station locations come from NOAA's ISD station list (`src/data/uk-stations.json`). If no nearby station has a complete day 36 hours after midnight, the game falls back to the forecast model's own estimate, and the result says so.
+
 Forecasts (the lines and rain odds) come from Open-Meteo. Set `OBSERVATIONS=model` to settle on the model instead of stations.
 
 ## Running it
@@ -43,16 +48,16 @@ npm test
 | `PORT` | `3000` | |
 | `DB_PATH` | `weatherornot.db` | SQLite file. Databases from the old points-betting version are refused; delete them first. |
 | `WEATHER_PROVIDER` | `open-meteo` | `mock` for fake weather and city search |
-| `ADMIN_TOKEN` | unset | Turns on the admin page (`/admin.html`) for reviewing player reports. Use a long random value. |
+| `ADMIN_TOKEN` | unset | Turns on the admin page (`/admin.html`): stats and player reports. Use a long random value. |
 | `OBSERVATIONS` | stations | `model` to settle on the forecast model instead of weather stations |
-| `PUBLIC_URL` | from the request | The site's public address, e.g. `https://weatherornot.app`. Set it in production so link previews (WhatsApp, Facebook, X) get absolute image URLs. |
+| `PUBLIC_URL` | from the request | The site's public address, e.g. `https://playweatherornot.co.uk`. Set it in production so link previews (WhatsApp, Facebook, X) get absolute image URLs. |
 | `TRUST_PROXY` | `0` | How many proxies sit in front of the app (usually `1` on a host). Without it, every player looks like the same visitor to the rate limits. Leave at `0` if the app faces the internet directly. |
 | `BACKUP_DIR` | `backups` next to the database | Where the daily database copies go. `off` turns them off. |
 | `BACKUP_KEEP` | `14` | How many daily copies to keep. |
 
 ## Hosting
 
-Live at https://playweatherornot.co.uk on the ai.doo Hetzner VPS. It's deployed the same way as the game scoreboards: on every push to `main`, GitHub Actions (`.github/workflows/deploy.yml`) runs the tests, copies the code to `/opt/weatherornot` and runs it with Docker Compose on `127.0.0.1:9890`. The VPS's own Caddy handles HTTPS and forwards to it (`deploy/Caddyfile`). **First-time setup and day-to-day running: `deploy/DEPLOY.md`.**
+Runs at https://playweatherornot.co.uk on the ai.doo Hetzner VPS (once the one-off setup in `deploy/DEPLOY.md` is done). It's deployed the same way as the game scoreboards: on every push to `main`, GitHub Actions (`.github/workflows/deploy.yml`) runs the tests, copies the code to `/opt/weatherornot` and runs it with Docker Compose on `127.0.0.1:9890`. The VPS's own Caddy handles HTTPS and forwards to it (`deploy/Caddyfile`). **First-time setup and day-to-day running: `deploy/DEPLOY.md`.**
 
 What runs by itself:
 
@@ -84,15 +89,20 @@ Dockerfile        container for hosting
 compose.yaml      how the VPS runs it
 deploy/           Caddy config and the step-by-step deploy guide
 .github/workflows/deploy.yml  tests, then deploys to the VPS
-public/           the web app (plain HTML/CSS/JS), icons, share image (og.png)
+public/           the web app (plain HTML/CSS/JS), icons, share image (og.png),
+                  privacy.html, terms.html, admin.html (stats and reports)
 public/fonts/     Fredoka, self-hosted (SIL Open Font License, see OFL.txt)
 test/             node:test suites
 ```
 
 ## Before launching publicly
 
+- **Legal check of Privacy and Terms,** then remove their "Draft" banners.
+- **One-off VPS setup** (`deploy/DEPLOY.md`): DNS, Caddy, GitHub secrets, first deploy. Turn on Hetzner's server backups too.
+- **Met Office DataHub** as the main source of station readings (OGIMET stays as the backup). Waiting on the account.
+
 - **Weather data licence.** Open-Meteo's free API is for non-commercial use only. Anything with ads or revenue needs their paid plan. Their CC BY 4.0 attribution is in the footer.
 - **No password reset yet.** Saved accounts are name + password only.
-- **No push notifications yet.** Players have to come back to see results; a morning "You called it ☔ 3/3" notification is the next big retention feature.
+- **No push notifications yet.** Players have to come back to see results; a morning "You called it ☔ 3/3" notification is planned (`ROADMAP.md`, Phase 3).
 - **A single SQLite file** comfortably handles thousands of players. It's backed up daily (see Hosting).
 - **Open-Meteo rate limits.** The free API allows about 10,000 calls a day. The app only fetches a forecast the first time a place is opened each day and once more to settle it, and it retries short outages and rate limits. Results are cached in the database.
