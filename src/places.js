@@ -40,8 +40,13 @@ export function openMeteoGeocoder({ fetchImpl = fetch } = {}) {
   return {
     async search(query) {
       let results = await lookup(query);
-      // The geocoder knows "Saint Helier" but not "St Helier".
-      if (!results.length && /^st\.?\s/i.test(query)) results = await lookup(query.replace(/^st\.?\s+/i, 'Saint '));
+      // The geocoder knows "Saint Helier" but not "St Helier" (and "St. Helier"
+      // finds a London suburb), so for "St" searches try "Saint" too, first.
+      if (/^st\.?\s/i.test(query)) {
+        const saint = await lookup(query.replace(/^st\.?\s+/i, 'Saint '));
+        const seen = new Set(saint.map((r) => r.id));
+        results = [...saint, ...results.filter((r) => !seen.has(r.id))];
+      }
       // The geocoder only matches place names, so "Douglas, Isle of Man" or
       // "Douglas Isle of Man" finds nothing. Search the first part and use
       // the rest to pick the right one.

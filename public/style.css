@@ -374,3 +374,10 @@ form.inline input { width: 100%; min-width: 0; }
   :root[data-sky='fog'] { --sky-bottom: #39414d; }
   :root[data-sky='sunny'] { --sky-bottom: #3a3222; }
 }
+/* Intro small print: a soft backing so it reads on any sky. */
+.fine { display: inline-block; justify-self: center; padding: 4px 10px; border-radius: 999px; background: rgb(10 25 50 / .35); text-shadow: none; }
+@media (min-width: 960px) { .fine { justify-self: start; } }
+@media (prefers-color-scheme: dark) {
+  #intro-guess:not([hidden]) + #intro-pick { color: #8fb4ff; }
+  :root[data-sky='cloudy'] { --sky-bottom: #2f3b4d; }
+}

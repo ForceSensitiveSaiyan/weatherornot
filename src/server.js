@@ -71,7 +71,12 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
       const guest = ctx.user?.guest ? ctx.user : null;
       ctx.setToken(game.login(ctx.body.name, ctx.body.password));
       // Answers made as a guest on this device carry over to the account.
-      const moved = guest ? game.mergeGuest(guest.id, ctx.user.id) : 0;
+      let moved = 0;
+      try {
+        if (guest) moved = game.mergeGuest(guest.id, ctx.user.id);
+      } catch (err) {
+        console.error('Merging guest answers failed:', err.message);
+      }
       return { ok: true, moved };
     },
     'POST /api/logout': (ctx) => {

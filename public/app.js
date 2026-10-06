@@ -364,6 +364,12 @@ function resultText() {
 async function loadGame() {
   if (!state.placeId) return render();
   state.loadError = null;
+  if (state.game?.place.id !== state.placeId) {
+    // A slow town can take a while (the weather service retries), so say so.
+    $('#load-error').hidden = false;
+    $('#load-error').innerHTML = `<p class="muted">Getting tomorrow's forecast for ${esc(state.placeName ?? 'your town')}…</p>`;
+    $('#place-name').textContent = state.placeName ?? 'Your town';
+  }
   try {
     state.game = await api(`/api/game?place=${encodeURIComponent(state.placeId)}`);
     if (state.game.stats) state.stats = state.game.stats;
@@ -399,7 +405,10 @@ $('#questions').addEventListener('click', async (e) => {
     $('#questions').innerHTML = round.questions.map((q) => questionCard(q, round)).join('');
     $(`.q[data-key="${key}"] .banker`)?.focus();
     renderDone();
-    if (!state.user) loadAll();
+    if (!state.user) {
+      await loadAll();
+      $(`.q[data-key="${key}"] .banker`)?.focus();
+    }
     toast(round.banker ? '★ Doubled. One a day: tap another to move it.' : 'Double points removed.');
   } catch (err) {
     toast(err.message);
@@ -604,7 +613,7 @@ function hideIntro() {
 function shareLink() {
   const { lastRound: r, place } = state.game;
   const q = new URLSearchParams({
-    from: state.user?.name ?? '', got: r.score.correct, of: r.questions.length, town: place.name, place: place.id,
+    from: state.user?.name ?? '', got: r.score.correct, of: scoredCount(r), town: place.name, place: place.id,
   });
   return `${location.origin}/?${q}`;
 }

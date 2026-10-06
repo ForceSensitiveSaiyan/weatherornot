@@ -40,7 +40,8 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       WHERE p.user_id = ? AND r.status = 'open'`),
     hasPicks: db.prepare('SELECT 1 FROM picks WHERE round_id = ? AND user_id = ? LIMIT 1'),
     movePicks: db.prepare('UPDATE picks SET user_id = ? WHERE round_id = ? AND user_id = ?'),
-    moveBanker: db.prepare('UPDATE bankers SET user_id = ? WHERE round_id = ? AND user_id = ?'),
+    moveBanker: db.prepare('UPDATE OR IGNORE bankers SET user_id = ? WHERE round_id = ? AND user_id = ?'),
+    dropBanker: db.prepare('DELETE FROM bankers WHERE round_id = ? AND user_id = ?'),
     lastPlace: db.prepare(`
       SELECT pl.* FROM picks p JOIN rounds r ON r.id = p.round_id JOIN places pl ON pl.id = r.place_id
       WHERE p.user_id = ? ORDER BY r.date DESC, p.rowid DESC LIMIT 1`),
@@ -179,7 +180,8 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       for (const { round_id: roundId } of q.guestOpenRounds.all(guestId)) {
         if (q.hasPicks.get(roundId, accountId)) continue;
         moved += q.movePicks.run(accountId, roundId, guestId).changes;
-        q.moveBanker.run(accountId, roundId, guestId);
+        q.moveBanker.run(accountId, roundId, guestId); // keeps the account's own double if it has one
+        q.dropBanker.run(roundId, guestId);
       }
       return moved;
     });

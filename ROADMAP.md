@@ -81,6 +81,14 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [x] Titles: last week's best forecaster in each town; each league's monthly champion; league tables are now weekly, with a shareable table
 - [x] Locked to the UK, Isle of Man and Channel Islands (search offers nowhere else); each town shows its weather station before you play
 
+## Phase 1d: QA and UI review ✅
+
+- [x] Full QA test and UI review of every page, then a re-test of every finding
+- [x] Fixed: two server crashes from malformed requests; spoofable rate limits (`TRUST_PROXY`); answers split across guests on slow connections; 320px overflow; weather-service-down dead end; midnight lock; scrapped-score mismatches; contrast; keyboard and screen-reader gaps; plus about 20 smaller bugs and polish items
+- [x] QA verdict on the re-test: can ship; UI verdict: looks good once the draft banners come off
+
+**Later (design, not blocking):** shorter one-line hints and rounder question numbers; a "you vs the forecast" stat card; proper night palettes for every sky; a two-column desktop game layout
+
 ## Decisions
 
 - **Where it runs:** the UK, the Isle of Man and the Channel Islands. Not Ireland for now (it would need its own data source, km/h and a look at Irish rules), and we say "the UK, Isle of Man and Channel Islands", not "British Isles"

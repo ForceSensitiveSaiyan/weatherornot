@@ -344,5 +344,21 @@ test('"St Helier" finds Saint Helier, and GB results name the county', async () 
   const geocoder = openMeteoGeocoder({ fetchImpl });
   assert.deepEqual((await geocoder.search('St Helier')).map((r) => r.name), ['Saint Helier']);
   assert.deepEqual(names, ['St Helier', 'Saint Helier']);
+  assert.deepEqual((await geocoder.search('St. Helier')).map((r) => r.name), ['Saint Helier']);
   assert.deepEqual((await geocoder.search('Newport')).map((r) => r.country), ['Shropshire, England']);
+});
+
+test('a guest logging in keeps the account\'s own double if both doubled the same game', async () => {
+  const { game, player } = setup();
+  const { round } = await game.view(null, LONDON);
+  const account = player();
+  game.saveAccount(account.id, 'keith', 'secret1');
+  game.setBanker(account.id, round.id, 'rain');
+  const guest = player();
+  game.makePick(guest.id, round.id, 'temp', 1);
+  game.setBanker(guest.id, round.id, 'temp');
+  assert.equal(game.mergeGuest(guest.id, account.id), 1);
+  const v = await game.view(account.id, LONDON);
+  assert.equal(v.round.banker, 'rain');
+  assert.equal(v.round.questions.find((q) => q.key === 'temp').myPick, 1);
 });
