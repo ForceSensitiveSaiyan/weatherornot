@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto';
 import { transaction } from './db.js';
 import { hashPassword, verifyPassword, newToken } from './auth.js';
 import { localDate, addDays, zonedMidnight, gameNumber, mondayOf, previousMonth } from './time.js';
-import { stationsNear } from './observations.js';
+import { stationsNear, isPlayable, nearestStationKm, PLAYABLE_KM } from './observations.js';
 import { POPULAR } from './places.js';
 import { questionsFor, resolveQuestion, describeQuestion, forecastCall } from './questions.js';
 import { scoreDay } from './scoring.js';
@@ -53,6 +53,17 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       SELECT * FROM rounds WHERE place_id = ? AND status = 'settled' ORDER BY date DESC LIMIT 1`),
     recentSettled: db.prepare(`
       SELECT questions, results FROM rounds WHERE place_id = ? AND status = 'settled' ORDER BY date DESC LIMIT ?`),
+    insertReport: db.prepare('INSERT OR IGNORE INTO reports (round_id, user_id, key, message) VALUES (?, ?, ?, ?)'),
+    openReports: db.prepare(`
+      SELECT rp.id, rp.round_id, rp.key, rp.message, rp.created_at, u.name AS user, r.date, r.questions, r.results,
+             p.name AS place
+      FROM reports rp JOIN rounds r ON r.id = rp.round_id JOIN users u ON u.id = rp.user_id
+      JOIN places p ON p.id = r.place_id
+      WHERE rp.status = 'open' ORDER BY rp.id`),
+    setReportStatus: db.prepare('UPDATE reports SET status = ? WHERE id = ?'),
+    voidReports: db.prepare("UPDATE reports SET status = 'voided' WHERE round_id = ? AND (key = ? OR key IS NULL) AND status = 'open'"),
+    setResults: db.prepare('UPDATE rounds SET results = ? WHERE id = ?'),
+    deleteScores: db.prepare('DELETE FROM scores WHERE round_id = ?'),
     setBanker: db.prepare(`
       INSERT INTO bankers (round_id, user_id, key) VALUES (?, ?, ?)
       ON CONFLICT (round_id, user_id) DO UPDATE SET key = excluded.key`),
@@ -170,12 +181,19 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     return results.map(publicPlace);
   }
 
-  const publicPlace = (p) => ({ id: p.id, name: p.name, country: p.country, tz: p.tz });
+  // Search results say whether each town is close enough to a weather station to play.
+  const publicPlace = (p) => ({
+    id: p.id, name: p.name, country: p.country, tz: p.tz,
+    playable: isPlayable(p), stationKm: nearestStationKm(p),
+  });
   const popularPlaces = () => POPULAR.map(publicPlace);
 
   function getPlace(id) {
     const place = q.place.get(String(id ?? ''));
     if (!place) throw new GameError("We don't know that place. Pick your town again?", 404);
+    if (!isPlayable(place)) {
+      throw new GameError(`${place.name} is more than ${PLAYABLE_KM} km from a weather station we can use, so results wouldn't be fair. Try the nearest bigger town.`, 422);
+    }
     return place;
   }
 
@@ -206,7 +224,8 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     const history = q.recentSettled.all(placeId, BIAS_WINDOW).map((r) => {
       const questions = Object.fromEntries(JSON.parse(r.questions).map((x) => [x.key, x]));
       const results = JSON.parse(r.results);
-      const diff = (key) => (questions[key] && results[key] ? results[key].observed - questions[key].forecast : null);
+      const diff = (key) => (questions[key] && results[key] && !results[key].voided
+        ? results[key].observed - questions[key].forecast : null);
       return { temp: diff('temp'), wind: diff('wind') };
     });
     return biasFrom(history);
@@ -361,6 +380,59 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   }
 
 
+  // ---- reports and voiding -------------------------------------------------
+
+  // A player thinks a result is wrong (usually a station glitch). One report
+  // per player per game, on games settled in the last two weeks.
+  function reportProblem(userId, roundId, key, message) {
+    const round = q.round.get(roundId);
+    if (!round || round.status !== 'settled') throw new GameError('Something went wrong. Refresh and try again.', 404);
+    if (round.date < addDays(utcDay(), -14)) throw new GameError("That game's too old to report now.", 409);
+    if (key != null && !JSON.parse(round.questions).some((x) => x.key === key)) {
+      throw new GameError('Something went wrong. Refresh and try again.');
+    }
+    message = String(message ?? '').trim().slice(0, 500);
+    if (message.length < 3) throw new GameError('Tell us a little about what looks wrong.');
+    if (q.insertReport.run(roundId, userId, key, message).changes === 0) {
+      throw new GameError("You've already reported this game. We'll take a look.", 409);
+    }
+  }
+
+  function listReports() {
+    return q.openReports.all().map((r) => {
+      const question = JSON.parse(r.questions).find((x) => x.key === r.key);
+      const results = JSON.parse(r.results);
+      return {
+        id: r.id, roundId: r.round_id, place: r.place, date: r.date, user: r.user, message: r.message,
+        key: r.key, question: question ? describeQuestion(question).title : null,
+        line: question?.line ?? null, observed: r.key ? results[r.key]?.observed ?? null : null,
+        source: results.source ?? null, reportedAt: r.created_at,
+      };
+    });
+  }
+
+  // Void one question of a settled game for everyone: it scores 5 (10 if
+  // doubled) for anyone who answered, and everyone's points are recalculated.
+  function voidQuestion(roundId, key, reason) {
+    const round = q.round.get(roundId);
+    if (!round || round.status !== 'settled') throw new GameError('No settled game with that id', 404);
+    if (!JSON.parse(round.questions).some((x) => x.key === key)) throw new GameError('No such question', 400);
+    reason = String(reason ?? '').trim().slice(0, 200) || 'the station reading looked wrong';
+    transaction(db, () => {
+      const results = JSON.parse(round.results);
+      results[key] = { ...results[key], answer: null, voided: reason };
+      if (results.forecast) results.forecast[key] = null;
+      q.setResults.run(JSON.stringify(results), round.id);
+      q.deleteScores.run(round.id);
+      scoreRound(round, results);
+      q.voidReports.run(round.id, key);
+    });
+  }
+
+  function dismissReport(reportId) {
+    if (q.setReportStatus.run('dismissed', reportId).changes === 0) throw new GameError('No such report', 404);
+  }
+
   // ---- stats & leagues -------------------------------------------------
 
   // Days in a row with a game played; still alive if the latest is no older than yesterday.
@@ -458,6 +530,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   return {
     createGuest, saveAccount, login, logout, userForToken,
     searchPlaces, popularPlaces, view, makePick, setBanker, settleRounds, stats,
+    reportProblem, listReports, voidQuestion, dismissReport,
     createLeague, joinLeague, leaveLeague, myLeagues, leaguePreview,
     tick: settleRounds,
   };

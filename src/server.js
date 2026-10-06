@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +38,24 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
       const key = ctx.body.key == null ? null : String(ctx.body.key);
       return { round: game.setBanker(user.id, Number(ctx.body.roundId), key) };
     },
+    'POST /api/reports': (ctx) => {
+      limiter(ctx.ip, 'report', 20);
+      const key = ctx.body.key == null || ctx.body.key === '' ? null : String(ctx.body.key);
+      game.reportProblem(requireUser(ctx.user).id, Number(ctx.body.roundId), key, ctx.body.message);
+      return { ok: true };
+    },
+    // Admin: needs ADMIN_TOKEN set on the server and sent as x-admin-token.
+    'GET /api/admin/reports': (ctx) => (requireAdmin(ctx), { reports: game.listReports() }),
+    'POST /api/admin/void': (ctx) => {
+      requireAdmin(ctx);
+      game.voidQuestion(Number(ctx.body.roundId), String(ctx.body.key), ctx.body.reason);
+      return { ok: true };
+    },
+    'POST /api/admin/dismiss': (ctx) => {
+      requireAdmin(ctx);
+      game.dismissReport(Number(ctx.body.reportId));
+      return { ok: true };
+    },
     'POST /api/account': (ctx) => {
       limiter(ctx.ip, 'account', 20);
       game.saveAccount(ensureUser(ctx).id, ctx.body.name, ctx.body.password);
@@ -62,6 +81,16 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
     },
   };
 
+  // Constant-time check of the admin token; without ADMIN_TOKEN set, admin is off.
+  function requireAdmin(ctx) {
+    const expected = process.env.ADMIN_TOKEN;
+    const given = String(ctx.adminToken ?? '');
+    if (!expected || given.length !== expected.length || !timingSafeEqual(Buffer.from(given), Buffer.from(expected))) {
+      limiter(ctx.ip, 'admin', 20);
+      throw new GameError('Not found', 404);
+    }
+  }
+
   function ensureUser(ctx) {
     if (!ctx.user) {
       limiter(ctx.ip, 'guest', 30);
@@ -84,6 +113,7 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
         body: req.method === 'POST' ? await readJson(req) : {},
         query: url.searchParams,
         ip: req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress,
+        adminToken: req.headers['x-admin-token'],
         setToken(newToken) {
           ctx.token = newToken;
           ctx.user = game.userForToken(newToken);

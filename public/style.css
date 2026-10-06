@@ -173,6 +173,22 @@ input { font: inherit; min-height: 48px; padding: 0 14px; border: 1.5px solid va
 .chip.gold { background: color-mix(in srgb, var(--gold) 14%, var(--card)); color: var(--gold); }
 
 footer { text-align: center; font-size: .8125rem; color: var(--ink-bottom); margin-top: 24px; }
+.site-footer { margin-top: 32px; padding: 24px 4px 8px; border-top: 1px solid color-mix(in srgb, var(--ink-bottom) 25%, transparent); }
+.site-footer a { color: inherit; }
+.footer-brand .logo { font-size: 1.2rem; color: var(--ink-bottom); }
+.footer-brand .logo span { color: inherit; opacity: .75; }
+.footer-brand p { margin: 4px 0 12px; }
+.footer-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 18px; margin-bottom: 12px; font-weight: 600; }
+.footer-links a { text-decoration: none; padding: 8px 2px; }
+.footer-links a:hover { text-decoration: underline; }
+.footer-small { margin: 6px auto; max-width: 420px; opacity: .85; line-height: 1.45; }
+.footer-bottom { margin-top: 14px; }
+/* Simple text pages: privacy and terms. */
+.doc { padding-bottom: 24px; }
+.doc .card h1 { font-size: 1.6rem; margin: 0 0 4px; }
+.doc .card h2 { margin-top: 20px; }
+.doc .card p, .doc .card li { line-height: 1.6; }
+.draft { background: #fff7d6; color: #5c4400; border-radius: 12px; padding: 10px 12px; font-size: .9rem; }
 
 dialog { border: 0; border-radius: var(--radius); padding: 18px; width: min(480px, calc(100vw - 32px));
   background: var(--card); color: var(--text); box-shadow: 0 20px 60px rgb(0 0 0 / .3); }
@@ -218,3 +234,10 @@ dialog::backdrop { background: rgb(10 20 40 / .5); }
 .versus { margin: 6px 0 0; font-weight: 600; font-family: var(--font-display); }
 .champion { margin: 0 0 8px; font-size: .9rem; }
 .champion:empty { display: none; }
+.place-list button:disabled { opacity: .55; cursor: default; }
+.place-list button:disabled:hover { background: none; }
+details.report { margin-top: 10px; }
+details.report summary { list-style: none; display: inline-block; }
+details.report summary::-webkit-details-marker { display: none; }
+select, textarea { font: inherit; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 14px; background: transparent; color: var(--text); }
+textarea { resize: vertical; }

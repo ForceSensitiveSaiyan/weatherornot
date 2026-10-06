@@ -182,6 +182,7 @@ function resultHeadline(r) {
 // "It hit 18.1°C." in words that fit each question.
 function outcomeText(q) {
   const v = fmt(q.result.observed, q.unit);
+  if (q.result.voided) return `Scrapped after we checked the station data (${esc(q.result.voided)}). Everyone who answered gets 5 pts (10 if doubled).`;
   if (q.result.answer == null) return `Exactly ${v}, a dead heat. Everyone who answered gets 5 pts (10 if doubled).`;
   const yes = q.result.answer === 1;
   if (q.key === 'rain') return yes ? `It rained ${v}.` : q.result.observed > 0 ? `Only ${v}, so no.` : 'It stayed dry.';
@@ -194,6 +195,22 @@ function resultsDay(date) {
   const d = new Date(`${date}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toLocaleDateString(LOCALE, { weekday: 'long', timeZone: 'UTC' });
+}
+
+// "Something look wrong?": a short form under the results.
+function reportBlock(r) {
+  if (!state.user) return '';
+  if (state.reported?.[r.id]) return '<p class="small-print muted">Thanks for flagging it. We\'ll check the station\'s readings.</p>';
+  return `<details class="report"><summary class="linkish small-print">Something look wrong? Tell us</summary>
+    <form id="report-form" class="stack" data-round="${r.id}">
+      <select name="key" aria-label="Which question">
+        ${r.questions.map((q) => `<option value="${q.key}">${esc(q.title)}</option>`).join('')}
+        <option value="">Something else</option>
+      </select>
+      <textarea name="message" rows="3" maxlength="500" required placeholder="What looks wrong? E.g. it poured all afternoon but it says 0 mm."></textarea>
+      <button class="btn small" type="submit">Send</button>
+      <p class="small-print muted" style="margin:0">If a station reading is clearly wrong, we scrap that question for everyone and give 5 pts each.</p>
+    </form></details>`;
 }
 
 const markFor = (score) => (!score ? '' : score.correct == null ? '➖' : score.correct ? '✅' : '❌');
@@ -226,6 +243,7 @@ function renderResults() {
       : `<p class="muted">${state.stats?.played
         ? 'You didn\'t play this one.'
         : `You weren't playing yet on ${fmtDay(last.date, { weekday: 'long' })}. Your first results land ${resultsDay(state.game.round.date)} morning.`}</p>`}
+    ${reportBlock(last)}
     ${last.number < state.game.round.number - 1 ? `<p class="small-print muted">Results for Game #${state.game.round.number - 1} (today's weather) land tomorrow morning.</p>` : ''}`;
 }
 
@@ -329,7 +347,7 @@ async function loadGame() {
     if (state.resultsFirst) store.set('seenResult', String(last.id));
   } catch (err) {
     toast(err.message);
-    if (/know that place/.test(err.message)) openPicker();
+    if (/know that place|from a weather station/.test(err.message)) openPicker();
   }
   render();
 }
@@ -444,6 +462,19 @@ document.addEventListener('submit', async (e) => {
       e.target.querySelector('.error').textContent = err.message;
     }
   }
+  if (e.target.id === 'report-form') {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const roundId = Number(e.target.dataset.round);
+    try {
+      await api('/api/reports', { roundId, key: form.get('key') || null, message: form.get('message') });
+      state.reported = { ...state.reported, [roundId]: true };
+      toast("Thanks. We'll check the station's readings.");
+      renderResults();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
   if (e.target.id === 'create-league') {
     e.preventDefault();
     try {
@@ -469,7 +500,9 @@ function choosePlace(place) {
 
 function listPlaces(places, label) {
   $('#place-results').innerHTML = (label ? `<li class="label">${label}</li>` : '') + (places.map((p, i) =>
-    `<li><button data-index="${i}"><strong>${esc(p.name)}</strong> <small>${esc(p.country)}</small></button></li>`).join('')
+    p.playable === false
+      ? `<li><button disabled><strong>${esc(p.name)}</strong> <small>${esc(p.country)}</small><br><small>Too far from a weather station${p.stationKm ? ` (${p.stationKm} km)` : ''}. Try the nearest bigger town.</small></button></li>`
+      : `<li><button data-index="${i}"><strong>${esc(p.name)}</strong> <small>${esc(p.country)}</small></button></li>`).join('')
     || '<li class="empty">No luck. WeatherOrNot covers the UK, the Isle of Man and the Channel Islands. Try a nearby town?</li>');
   $('#place-results').onclick = (e) => {
     const btn = e.target.closest('button[data-index]');
@@ -542,6 +575,8 @@ async function handleInvite() {
 }
 
 // ---- start -----------------------------------------------------------------
+
+$('#year').textContent = new Date().getFullYear();
 
 (async function start() {
   ({ places: state.popular } = await api('/api/places/popular'));

@@ -43,6 +43,8 @@ npm test
 | `PORT` | `3000` | |
 | `DB_PATH` | `weatherornot.db` | SQLite file. Databases from the old points-betting version are refused; delete them first. |
 | `WEATHER_PROVIDER` | `open-meteo` | `mock` for fake weather and city search |
+| `ADMIN_TOKEN` | unset | Turns on the admin page (`/admin.html`) for reviewing player reports. Use a long random value. |
+| `OBSERVATIONS` | stations | `model` to settle on the forecast model instead of weather stations |
 | `PUBLIC_URL` | from the request | The site's public address, e.g. `https://weatherornot.app`. Set it in production so link previews (WhatsApp, Facebook, X) get absolute image URLs. |
 
 ## Layout

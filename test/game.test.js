@@ -264,3 +264,48 @@ test('you vs the forecast, weekly city champion and monthly league champion', as
   assert.deepEqual(mine.standings.map((s) => s.points), [0, 0]);
   assert.equal(game.leaguePreview(league.code).members, 2);
 });
+
+test('a reported station glitch can be scrapped for everyone, and scores are recalculated', async () => {
+  const { game, clock, weather, player } = setup();
+  const ann = player();
+  const ben = player();
+  const { round } = await game.view(null, LONDON);
+  game.makePick(ann.id, round.id, 'rain', 1);
+  game.setBanker(ann.id, round.id, 'rain');
+  game.makePick(ben.id, round.id, 'rain', 0);
+  assert.throws(() => game.reportProblem(ann.id, round.id, 'rain', 'too early'), /Something went wrong/, 'not settled yet');
+
+  clock.now = new Date('2026-10-07T07:00:00Z');
+  weather.set('2026-10-06', { ...mild, precip: 0 }); // the gauge says bone dry
+  weather.set('2026-10-08', mild);
+  await game.settleRounds();
+  assert.deepEqual((await game.view(ben.id, LONDON)).lastRound.score, { correct: 1, points: 18 });
+
+  game.reportProblem(ann.id, round.id, 'rain', 'It poured all afternoon');
+  assert.throws(() => game.reportProblem(ann.id, round.id, 'rain', 'again'), /already reported/);
+  assert.throws(() => game.reportProblem(ben.id, round.id, null, 'x'), /Tell us a little/);
+  const [report] = game.listReports();
+  assert.deepEqual([report.place, report.question, report.observed, report.message], ['London', 'Will it rain?', 0, 'It poured all afternoon']);
+
+  game.voidQuestion(round.id, 'rain', 'the rain gauge missed 6 hours');
+  assert.deepEqual(game.listReports(), []);
+  const annView = await game.view(ann.id, LONDON);
+  assert.deepEqual(annView.lastRound.score, { correct: 0, points: 10 }); // 5, doubled
+  assert.equal(annView.lastRound.questions[0].result.voided, 'the rain gauge missed 6 hours');
+  assert.deepEqual((await game.view(ben.id, LONDON)).lastRound.score, { correct: 0, points: 5 });
+  // Rain no longer counts; the forecast got temperature and wind right.
+  assert.deepEqual(annView.lastRound.forecast, { correct: 2, total: 2 });
+});
+
+test('towns more than 45 km from a weather station cannot be played', async () => {
+  const { game } = setup();
+  // A made-up place out in the Atlantic, near Rockall.
+  const farGeocoder = { search: async () => [{ id: 'gn:999', name: 'Nowhere', country: 'Scotland', lat: 57.6, lon: -13.7, tz: 'Europe/London' }] };
+  const g = createGame({ db: openDb(), provider: { daily: async () => new Map() }, geocoder: farGeocoder });
+  const [nowhere] = await g.searchPlaces('Nowhere');
+  assert.equal(nowhere.playable, false);
+  assert.ok(nowhere.stationKm == null || nowhere.stationKm > 45);
+  await assert.rejects(g.view(null, 'gn:999'), /more than 45 km from a weather station/);
+  const [bristol] = (await game.searchPlaces('bristol'));
+  assert.deepEqual([bristol.name, bristol.playable, bristol.stationKm], ['Bristol', true, 42]);
+});

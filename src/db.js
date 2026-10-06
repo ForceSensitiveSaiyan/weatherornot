@@ -68,6 +68,17 @@ export function openDb(path = ':memory:') {
       PRIMARY KEY (round_id, user_id)
     );
     CREATE INDEX IF NOT EXISTS scores_user ON scores(user_id);
+    -- "Something look wrong?" reports on settled results, reviewed by an admin.
+    CREATE TABLE IF NOT EXISTS reports (
+      id         INTEGER PRIMARY KEY,
+      round_id   INTEGER NOT NULL REFERENCES rounds(id),
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      key        TEXT,                    -- the question, or NULL for "something else"
+      message    TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'open',  -- 'open' | 'voided' | 'dismissed'
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (round_id, user_id)
+    );
     CREATE TABLE IF NOT EXISTS leagues (
       id         INTEGER PRIMARY KEY,
       name       TEXT NOT NULL,

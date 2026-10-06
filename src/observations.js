@@ -13,6 +13,8 @@ import { fetchWithRetry } from './weather.js';
 
 export const STATIONS = JSON.parse(readFileSync(new URL('./data/uk-stations.json', import.meta.url), 'utf8'));
 const MAX_KM = 50;
+// A town can be played only if a station is this close, so results are fair.
+export const PLAYABLE_KM = 45;
 
 export function distanceKm(a, b) {
   const rad = (d) => (d * Math.PI) / 180;
@@ -21,7 +23,11 @@ export function distanceKm(a, b) {
   return 6371 * 2 * Math.asin(Math.sqrt(h));
 }
 
-// Stations within 50 km of a place, nearest first.
+// The nearest station's distance in km, or null if there's none within 50 km.
+export const nearestStationKm = (place) => stationsNear(place, 1)[0]?.km ?? null;
+export const isPlayable = (place) => (nearestStationKm(place) ?? Infinity) <= PLAYABLE_KM;
+
+// Stations within 50 km of a place, nearest first (backups for settling).
 export function stationsNear(place, limit = 3) {
   return STATIONS.map((s) => ({ ...s, km: Math.round(distanceKm(place, s)) }))
     .filter((s) => s.km <= MAX_KM)

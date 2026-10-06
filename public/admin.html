@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>WeatherOrNot admin · Reports</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 760px; padding: 16px; color: #17202c; background: #f4f7fb; }
+    @media (prefers-color-scheme: dark) { body { color: #eef2f7; background: #0f141b; } .r { background: #151d2a !important; } }
+    h1 { font-size: 1.3rem; }
+    .r { background: #fff; border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+    .meta { color: #6b7686; font-size: .85rem; }
+    button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid #888; background: none; color: inherit; cursor: pointer; margin-right: 6px; }
+    button.void { background: #c2410c; border-color: #c2410c; color: #fff; }
+    input { font: inherit; padding: 6px 8px; width: 100%; box-sizing: border-box; margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>Player reports</h1>
+  <p class="meta">Void a question only when a station reading is clearly wrong (missing hours, an impossible value, or it disagrees badly with nearby stations). Voiding gives everyone who answered 5 pts (10 if doubled) and recalculates scores.</p>
+  <div id="list">Loading…</div>
+  <script>
+    const token = () => sessionStorage.getItem('adminToken') ?? (sessionStorage.setItem('adminToken', prompt('Admin token') ?? ''), sessionStorage.getItem('adminToken'));
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    async function call(path, body) {
+      const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'x-admin-token': token(), 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+      if (res.status === 404) { sessionStorage.removeItem('adminToken'); throw new Error('Wrong admin token'); }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    }
+    async function load() {
+      try {
+        const { reports } = await call('/api/admin/reports');
+        document.getElementById('list').innerHTML = reports.map((r) => `<div class="r" data-id="${r.id}" data-round="${r.roundId}" data-key="${r.key ?? ''}">
+          <strong>${esc(r.place)}, ${esc(r.date)}</strong>: ${esc(r.question ?? 'Something else')}
+          ${r.key ? `<div class="meta">Question number ${esc(r.line)}, recorded ${esc(r.observed)} at ${esc(r.source?.name ?? 'the forecast model')}</div>` : ''}
+          <p>"${esc(r.message)}" <span class="meta">from ${esc(r.user)}, ${esc(r.reportedAt)}</span></p>
+          ${r.key ? '<input class="reason" placeholder="Reason shown to players, e.g. the rain gauge missed 6 hours">' : ''}
+          ${r.key ? '<button class="void">Scrap this question</button>' : ''}<button class="dismiss">Dismiss</button>
+        </div>`).join('') || '<p>No open reports.</p>';
+      } catch (err) { document.getElementById('list').textContent = err.message; }
+    }
+    document.addEventListener('click', async (e) => {
+      const card = e.target.closest('.r');
+      if (!card) return;
+      try {
+        if (e.target.matches('.void') && confirm('Scrap this question for everyone?')) {
+          await call('/api/admin/void', { roundId: Number(card.dataset.round), key: card.dataset.key, reason: card.querySelector('.reason').value });
+        } else if (e.target.matches('.dismiss')) {
+          await call('/api/admin/dismiss', { reportId: Number(card.dataset.id) });
+        } else return;
+        load();
+      } catch (err) { alert(err.message); }
+    });
+    load();
+  </script>
+</body>
+</html>

@@ -47,3 +47,18 @@ test('rate limiter blocks after the limit and resets after an hour', () => {
   t = 3_600_001;
   limit('1.2.3.4', 'login', 2);
 });
+
+test('admin endpoints need the admin token, and are off without one', async (t) => {
+  const game = createGame({ db: openDb(), provider: mockProvider(), geocoder: mockGeocoder() });
+  const server = createServer(createApp(game)).listen(0);
+  t.after(() => { server.close(); delete process.env.ADMIN_TOKEN; });
+  const base = `http://localhost:${server.address().port}`;
+  const get = (token) => fetch(`${base}/api/admin/reports`, { headers: token ? { 'x-admin-token': token } : {} });
+  assert.equal((await get('anything')).status, 404, 'off when ADMIN_TOKEN is unset');
+  process.env.ADMIN_TOKEN = 'correct-horse-battery';
+  assert.equal((await get('wrong-horse-battery!')).status, 404);
+  assert.equal((await get()).status, 404);
+  const ok = await get('correct-horse-battery');
+  assert.equal(ok.status, 200);
+  assert.deepEqual(await ok.json(), { reports: [] });
+});

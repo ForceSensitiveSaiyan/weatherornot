@@ -62,7 +62,9 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [x] Recalibrate rain odds and line bias against station data (`npm run simulate -- --real --station`): highs at stations run 0.35°C above the forecast, gusts 0.2 mph above, and rain is more likely at low forecast amounts than the model suggested. Calibrated lines now come out YES 53% (temperature) and 52% (wind); copying scores 18.6 a day vs 19.3 for guessing
 - [x] Every result says where it came from ("Measured at Ronaldsway Airport weather station, 12 km away")
 - [ ] Production data source: Met Office Weather DataHub Land Observations (free tier: 360 calls a day, hourly data, 48 hours of history, ~150 UK stations). Check it has rainfall and gusts and whether it covers the Isle of Man and Channel Islands; keep OGIMET as the backup
-- [ ] Decide the distance limit for playable towns and how players report a bad reading (see "Disputes" below)
+- [x] Towns must be within 45 km of a weather station to be played (keeps Bristol, 42 km); search shows too-far towns greyed out with the distance
+- [x] "Something look wrong? Tell us" on results, reviewed on an admin page (`/admin.html`, needs `ADMIN_TOKEN`). Scrapping a question voids it for everyone (5 pts, 10 if doubled) and recalculates scores
+- [ ] Met Office DataHub key: waiting for the owner to register and add `METOFFICE_API_KEY` to the environment
 - [x] Live test of a Douglas game: settled on Ronaldsway's reports in under a second. On 5 Oct the model said 17.4°C, the station measured 18.1°C, against a 17.8°C line, which is exactly the kind of call this fixes
 
 ## Phase 1c: First visit explains the game ⏭
@@ -78,18 +80,19 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [x] Titles: last week's best forecaster in each town; each league's monthly champion; league tables are now weekly, with a shareable table
 - [x] Locked to the UK, Isle of Man and Channel Islands (search offers nowhere else); each town shows its weather station before you play
 
-## Disputes (proposal, not built)
+## Decisions
 
-- Show the station and distance before anyone plays (done), so the rules are clear up front
-- Only offer towns within a set distance of a reporting station (to decide: 30 km would leave out Bristol, whose nearest full station is 42 km away)
-- "Report a problem" on a result goes to a review queue. If a station reading is clearly wrong, the question is voided for everyone (5 pts each). No per-player disputes: "it rained at my house" can't be checked and would be gamed
+- **Where it runs:** the UK, the Isle of Man and the Channel Islands. Not Ireland for now (it would need its own data source, km/h and a look at Irish rules), and we say "the UK, Isle of Man and Channel Islands", not "British Isles"
+- **Disputes:** no per-player disputes ("it rained at my house" can't be checked and would be gamed). Players report; we scrap a question for everyone if a station reading is clearly wrong
 
 ## Phase 2: Ready for the friends test
 
 - [ ] Hosting, with `PUBLIC_URL` set and a domain
 - [ ] Database backups
 - [ ] Basic, privacy-friendly analytics: do people come back the next day? Do they share?
-- [ ] Privacy notice (UK GDPR: we store a name, password hash and picks, nothing else)
+- [x] Footer with credits, Privacy and Terms pages, "Powered by ai.doo"
+- [ ] Privacy notice and terms are drafts: fill in who runs the site and a contact address, and get them checked
+- [ ] Link "Powered by ai.doo" to ai.doo's site (address to confirm)
 - [ ] Decide the Open-Meteo plan (free is non-commercial only)
 
 ## Phase 3: Bring people back

@@ -64,7 +64,7 @@
 
       <section class="card" id="account"></section>
 
-      <section class="card how">
+      <section class="card how" id="how">
         <h2>How it works</h2>
         <p>3 quick questions about <strong>tomorrow's</strong> weather where you live. Change your answers until midnight. We check the weather at your nearest station and post results the morning after.</p>
         <div class="chips">
@@ -76,7 +76,21 @@
       </section>
     </main>
 
-    <footer>Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></footer>
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <div class="logo">Weather<span>Or</span>Not</div>
+        <p>Guess tomorrow's weather. Beat the forecast, then beat your mates.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="#how">How it works</a>
+        <a href="/privacy.html">Privacy</a>
+        <a href="/terms.html">Terms</a>
+      </nav>
+      <p class="footer-small">Free to play. No money, no prizes, just bragging rights. For the UK, the Isle of Man and the Channel Islands.</p>
+      <p class="footer-small">Forecasts from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Results from official weather station reports, via <a href="https://www.ogimet.com/" target="_blank" rel="noopener">OGIMET</a>. Station locations from <a href="https://www.ncei.noaa.gov/products/land-based-station/integrated-surface-database" target="_blank" rel="noopener">NOAA</a>.</p>
+      <p class="footer-small">It's a game, not a weather service. For anything that matters, check the <a href="https://www.metoffice.gov.uk/" target="_blank" rel="noopener">Met Office</a>.</p>
+      <p class="footer-small footer-bottom">© <span id="year">2026</span> WeatherOrNot · Powered by ai.doo</p>
+    </footer>
   </div>
 
   <dialog id="place-dialog" aria-label="Choose your city">
