@@ -118,7 +118,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
 
   function validateCredentials(name, password) {
     name = String(name ?? '').trim();
-    if (!/^[A-Za-z0-9_-]{3,20}$/.test(name)) throw new GameError('Names need 3 to 20 letters, numbers, _ or -');
+    if (!/^[A-Za-z0-9_-]{3,20}$/.test(name)) throw new GameError('Names need 3 to 20 characters: letters, numbers, _ or -');
     if (String(password ?? '').length < 6) throw new GameError('Password must be at least 6 characters');
     return name;
   }
@@ -175,7 +175,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
 
   function getPlace(id) {
     const place = q.place.get(String(id ?? ''));
-    if (!place) throw new GameError('Unknown place', 404);
+    if (!place) throw new GameError("We don't know that place. Pick your town again?", 404);
     return place;
   }
 
@@ -271,12 +271,12 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
 
   function openRound(roundId, key) {
     const round = q.round.get(roundId);
-    if (!round) throw new GameError('No such game', 404);
+    if (!round) throw new GameError('Something went wrong. Refresh and try again.', 404);
     const place = getPlace(round.place_id);
     if (round.status !== 'open' || localDate(place.tz, now()) >= round.date) {
-      throw new GameError('This game is locked', 409);
+      throw new GameError('Too late, answers for this day have closed.', 409);
     }
-    if (key != null && !JSON.parse(round.questions).some((x) => x.key === key)) throw new GameError('No such question');
+    if (key != null && !JSON.parse(round.questions).some((x) => x.key === key)) throw new GameError('Something went wrong. Refresh and try again.');
     return { round, place };
   }
 
@@ -406,7 +406,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
 
   function createLeague(userId, name) {
     name = String(name ?? '').trim();
-    if (name.length < 1 || name.length > 40) throw new GameError('League names can be up to 40 characters');
+    if (name.length < 1 || name.length > 40) throw new GameError('Give your league a name (40 characters max).');
     return transaction(db, () => {
       let code;
       do {
@@ -420,7 +420,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
 
   function joinLeague(userId, code) {
     const league = q.leagueByCode.get(String(code ?? '').trim().toUpperCase());
-    if (!league) throw new GameError('No league with that code', 404);
+    if (!league) throw new GameError("We can't find that league. Check the link?", 404);
     q.joinLeague.run(league.id, userId);
     return { id: league.id, name: league.name, code: league.code };
   }
@@ -428,13 +428,13 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   // What an invite link shows before you join.
   function leaguePreview(code) {
     const league = q.leagueByCode.get(String(code ?? '').trim().toUpperCase());
-    if (!league) throw new GameError('No league with that code', 404);
+    if (!league) throw new GameError("We can't find that league. Check the link?", 404);
     const members = q.standings.all('0000-00-00', '9999-12-31', league.id);
     return { name: league.name, code: league.code, members: members.length, owner: q.userById.get(league.owner_id)?.name };
   }
 
   function leaveLeague(userId, leagueId) {
-    if (q.leaveLeague.run(leagueId, userId).changes === 0) throw new GameError('You are not in that league', 404);
+    if (q.leaveLeague.run(leagueId, userId).changes === 0) throw new GameError("You're not in that league.", 404);
   }
 
   function myLeagues(userId) {

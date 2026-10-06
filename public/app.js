@@ -46,14 +46,8 @@ function fmt(value, unit) {
 }
 const fmtDay = (date, opts) => new Date(`${date}T12:00:00Z`).toLocaleDateString(LOCALE, { ...opts, timeZone: 'UTC' });
 
-// Details with a bit of personality; the server's are the fallback.
-const COPY = {
-  rain: { detail: 'Brolly needed? 1 mm or more counts.' },
-  temp: { detail: "Tomorrow's high" },
-  wind: { detail: 'The strongest gust of the day' },
-};
 const titleOf = (q) => q.title;
-const detailOf = (q) => COPY[q.key]?.detail ?? q.detail;
+const detailOf = (q) => q.detail;
 
 // Why the line sits where it does, in plain words.
 function hintFor(q) {
@@ -61,15 +55,15 @@ function hintFor(q) {
     const inTen = Math.round(q.chance * 10);
     const mood = inTen >= 6 ? "Rain's likely" : inTen <= 3 ? "Rain's unlikely" : 'Could go either way';
     const odds = inTen < 1 ? 'fewer than 1 in 10 days like this get wet' : `about ${inTen} in 10 days like this get wet`;
-    return `Forecast ${fmt(q.forecast, q.unit)}. ${mood}: ${odds}. Less likely = more points.`;
+    return `Forecast: ${fmt(q.forecast, q.unit)} of rain. ${mood} (${odds}), so a right ${inTen >= 5 ? 'Yes scores less than a right No' : 'No scores less than a right Yes'}.`;
   }
   const shift = Math.round(Math.abs(q.bias) * 10) / 10;
   const base = `Forecast ${fmt(q.forecast, q.unit)}.`;
-  if (shift < 0.1) return `${base} The question sits right on it.`;
+  if (shift < 0.1) return `${base} The question uses the forecast number.`;
   const tends = q.key === 'temp'
-    ? (q.bias > 0 ? 'Highs tend to come in a little warmer than forecast' : 'Highs tend to come in a little cooler than forecast')
-    : (q.bias > 0 ? 'Gusts tend to come in a little stronger than forecast' : 'Gusts tend to come in a little lighter than forecast');
-  return `${base} ${tends}, so we've set the question ${fmt(shift, q.unit)} ${q.bias > 0 ? 'higher' : 'lower'}.`;
+    ? (q.bias > 0 ? 'Highs here usually beat the forecast a little' : 'Highs here usually fall a little short of the forecast')
+    : (q.bias > 0 ? 'Gusts here usually come in a bit stronger than forecast' : 'Gusts here usually come in a bit lighter than forecast');
+  return `${base} ${tends}, so we've asked about ${fmt(q.line, q.unit)} to make it a fair coin flip.`;
 }
 
 function untilText(iso) {
@@ -110,7 +104,7 @@ function render() {
     ? `🏆 Last week's best forecaster: <strong>${game.champion.names.map(esc).join(' and ')}</strong> (${game.champion.points} pts)`
     : '';
   $('#hero-station').textContent = game.station
-    ? `Results measured at ${game.station.name} weather station, ${game.station.km} km away`
+    ? `Results from ${game.station.name} weather station, ${game.station.km} km away`
     : 'No weather station nearby, so results use the forecast model';
   renderLeagues();
   renderAccount();
@@ -123,8 +117,8 @@ function renderCountdown() {
   const day = fmtDay(round.date, { weekday: 'short', day: 'numeric', month: 'short' });
   const dots = round.questions.map((q) => `<i class="${q.myPick != null ? 'on' : ''}"></i>`).join('');
   $('#hero-sub').innerHTML = left === 'locked'
-    ? `${day} · Game #${round.number} · locked 🔒`
-    : `${day} · Game #${round.number} · locks in ${left} <span class="dots" aria-label="${picksMade()} of 3 called">${dots}</span>`;
+    ? `${day} · Game #${round.number} · answers closed 🔒`
+    : `${day} · Game #${round.number} · answers close in ${left} <span class="dots" aria-label="${picksMade()} of 3 answered">${dots}</span>`;
 }
 
 // The crowd split, once you've picked and at least three people have.
@@ -146,12 +140,12 @@ function questionCard(q, round) {
     <div class="q-head"><div class="q-emoji" aria-hidden="true">${q.emoji}</div>
       <div><div class="q-title">${esc(titleOf(q))}</div><div class="q-detail">${esc(detailOf(q))}</div></div></div>
     <div class="choices">
-      <button class="choice yes" data-pick="1" aria-pressed="${q.myPick === 1}" ${locked}>Yes <small>+${q.pays.yes * x} pts</small></button>
-      <button class="choice no" data-pick="0" aria-pressed="${q.myPick === 0}" ${locked}>No <small>+${q.pays.no * x} pts</small></button>
+      <button class="choice yes" data-pick="1" aria-pressed="${q.myPick === 1}" ${locked}>Yes <small>· ${q.pays.yes * x} pts</small></button>
+      <button class="choice no" data-pick="0" aria-pressed="${q.myPick === 0}" ${locked}>No <small>· ${q.pays.no * x} pts</small></button>
     </div>
     <div class="q-foot">
       <p class="hint">${esc(hintFor(q))}</p>
-      <button class="banker" aria-pressed="${banked}" ${locked} title="Double points on this one. One a day.">★ ${banked ? 'Doubled' : 'Double it'}</button>
+      <button class="banker" aria-pressed="${banked}" ${locked} title="Double points on this one. One a day.">★ ${banked ? 'Doubled' : 'Double points'}</button>
     </div>
     ${crowdLine(q)}
   </article>`;
@@ -164,35 +158,42 @@ function renderDone() {
   el.hidden = n < round.questions.length;
   if (el.hidden) return;
   const banked = round.questions.find((q) => q.key === round.banker);
-  el.innerHTML = `<div class="big">Locked in. Now we wait 🍿</div>
-    <p class="muted">${banked ? `You doubled "${esc(banked.title)}". ` : 'Tip: tap ★ Double it on the one you\'re surest of. '}You can change your answers until midnight in ${esc(place.name)}.</p>
+  el.innerHTML = `<div class="big">All done. Now we wait 🍿</div>
+    <p class="muted">${banked ? `You doubled "${esc(banked.title)}". ` : 'Tip: tap ★ Double points on the one you\'re surest of. '}Change your mind? You've got until midnight in ${esc(place.name)}. Results land ${resultsDay(round.date)} morning.</p>
     <div class="btn-row"><button class="btn" data-action="challenge">Challenge a mate</button></div>`;
 }
 
 // Where the results came from, so nobody has to take our word for it.
 function sourceLine(source) {
   if (source?.type === 'station') {
-    return `📍 Measured at ${esc(source.name)} weather station${source.km ? `, ${source.km} km away` : ''}`;
+    return `📍 ${esc(source.name)}`;
   }
-  return '📍 No nearby weather station had a full day of readings, so this used the forecast model\'s estimate';
+  return "📍 No full station reading that day, so we used the forecast model's estimate";
 }
 
 function resultHeadline(r) {
   if (r.forecast && r.score.correct > r.forecast.correct) return 'You beat the forecast! 🎯';
   const banker = r.questions.find((q) => q.score?.banker);
-  if (banker?.score.correct) return 'Your double came in! ★';
+  if (banker?.score.correct) return 'You nailed the one you doubled! ★';
   return ['Rough one. The sky had other ideas.', 'One out of three. Tomorrow\'s another day.',
-    'Nice forecasting!', 'Perfect call! ☀️'][r.score.correct] ?? 'Results are in';
+    'Nice forecasting!', '3 out of 3! ☀️'][r.score.correct] ?? 'Results are in';
 }
 
-// "It did: 18.1°C." in words that fit each question.
+// "It hit 18.1°C." in words that fit each question.
 function outcomeText(q) {
   const v = fmt(q.result.observed, q.unit);
-  if (q.result.answer == null) return `Exactly ${v}, right on the number. Everyone who answered gets 5.`;
+  if (q.result.answer == null) return `Exactly ${v}, a dead heat. Everyone who answered gets 5 pts (10 if doubled).`;
   const yes = q.result.answer === 1;
-  if (q.key === 'rain') return yes ? `It rained: ${v}.` : q.result.observed > 0 ? `Only ${v}, so no.` : 'It stayed dry.';
-  if (q.key === 'wind') return yes ? `They did: ${v}.` : `They didn't: ${v}.`;
-  return yes ? `It did: ${v}.` : `It didn't: ${v}.`;
+  if (q.key === 'rain') return yes ? `It rained ${v}.` : q.result.observed > 0 ? `Only ${v}, so no.` : 'It stayed dry.';
+  if (q.key === 'wind') return `Top gust ${v}.`;
+  return yes ? `It hit ${v}.` : `It only reached ${v}.`;
+}
+
+// The morning a game's results arrive: the day after the game's day.
+function resultsDay(date) {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toLocaleDateString(LOCALE, { weekday: 'long', timeZone: 'UTC' });
 }
 
 const markFor = (score) => (!score ? '' : score.correct == null ? '➖' : score.correct ? '✅' : '❌');
@@ -206,23 +207,26 @@ function renderResults() {
   const played = !!last.score;
   el.innerHTML = `
     <div class="result-head">
-      <h2>${fmtDay(last.date, { weekday: 'long' })}'s results · #${last.number}</h2>
+      <h2>${fmtDay(last.date, { weekday: 'long' })}'s results · Game #${last.number}</h2>
       ${played ? `<div class="result-score">${last.score.correct}/${last.questions.length}</div>` : ''}
     </div>
     ${played ? `<p class="muted" style="margin:4px 0 0">${resultHeadline(last)}</p>` : ''}
-    ${played && last.forecast ? `<p class="versus">You ${last.score.correct}/${last.forecast.total} · Forecast ${last.forecast.correct}/${last.forecast.total}</p>` : ''}
+    ${played && last.forecast ? `<p class="versus">You got ${last.score.correct} of ${last.forecast.total}. Just going with the forecast got ${last.forecast.correct}.</p>` : ''}
     <p class="source">${sourceLine(last.source)}</p>
     <ul class="result-list">${last.questions.map((q) => {
-      const tags = q.score?.banker ? '<span class="bonus">★ doubled</span>' : '';
+      const tags = q.score?.banker ? '<span class="bonus">★ Doubled</span>' : '';
       const you = q.score ? ` You said ${q.score.pick ? 'Yes' : 'No'}.` : '';
       return `<li><span class="r-emoji" aria-hidden="true">${q.emoji}</span>
         <span><strong>${esc(titleOf(q))}</strong>${tags}<br>
         <span class="r-actual">${outcomeText(q)}${you}</span></span>
-        <span class="r-points ${q.score?.points ? '' : 'zero'}">${q.score ? `${markFor(q.score)} ${q.score.points}` : ''}</span></li>`;
+        <span class="r-points ${q.score?.points ? '' : 'zero'}">${q.score ? `${markFor(q.score)} ${q.score.points ? `+${q.score.points}` : 0} pts` : ''}</span></li>`;
     }).join('')}</ul>
     ${played
       ? `<div class="btn-row"><span class="result-score">${last.score.points} pts</span><button class="btn" data-action="share">Share result</button></div>`
-      : '<p class="muted">You didn\'t play this one. Answer tomorrow\'s questions above!</p>'}`;
+      : `<p class="muted">${state.stats?.played
+        ? 'You didn\'t play this one.'
+        : `You weren't playing yet on ${fmtDay(last.date, { weekday: 'long' })}. Your first results land ${resultsDay(state.game.round.date)} morning.`}</p>`}
+    ${last.number < state.game.round.number - 1 ? `<p class="small-print muted">Results for Game #${state.game.round.number - 1} (today's weather) land tomorrow morning.</p>` : ''}`;
 }
 
 // Standard competition ranking: tied scores share a place, shown as "=1".
@@ -262,7 +266,7 @@ function renderAccount() {
   const mode = el.dataset.mode ?? 'closed';
   const vs = stats?.vsForecast;
   const versus = vs?.calls >= 3
-    ? `<p class="versus">🎯 You vs the forecast, last 30 days: <strong>${Math.round((100 * vs.you) / vs.calls)}%</strong> right vs ${Math.round((100 * vs.forecast) / vs.calls)}%</p>`
+    ? `<p class="versus">🎯 Last 30 days: you got <strong>${Math.round((100 * vs.you) / vs.calls)}%</strong> right. Just going with the forecast got ${Math.round((100 * vs.forecast) / vs.calls)}%.</p>`
     : '';
   if (user && !user.guest) {
     el.innerHTML = `<div class="account-row"><div><strong>${esc(user.name)}</strong>
@@ -308,7 +312,7 @@ function resultText() {
   const { lastRound: r, place } = state.game;
   const grid = r.questions.map((q) => `${q.emoji}${markFor(q.score) || '⬜'}${q.score?.banker ? '★' : ''}`).join(' ');
   const streak = state.stats?.streak ? ` · 🔥${state.stats.streak}` : '';
-  const vs = r.forecast ? ` (forecast ${r.forecast.correct}/${r.forecast.total})` : '';
+  const vs = r.forecast ? ` (the forecast got ${r.forecast.correct}/${r.forecast.total})` : '';
   return `WeatherOrNot #${r.number} · ${place.name}\n${grid}\n${r.score.correct}/${r.questions.length}${vs} · ${r.score.points} pts${streak}`;
 }
 
@@ -325,7 +329,7 @@ async function loadGame() {
     if (state.resultsFirst) store.set('seenResult', String(last.id));
   } catch (err) {
     toast(err.message);
-    if (/Unknown place/.test(err.message)) openPicker();
+    if (/know that place/.test(err.message)) openPicker();
   }
   render();
 }
@@ -349,6 +353,7 @@ $('#questions').addEventListener('click', async (e) => {
     $('#questions').innerHTML = round.questions.map((q) => questionCard(q, round)).join('');
     renderDone();
     if (!state.user) loadAll();
+    toast(round.banker ? 'Doubled. You get one a day, so tapping another moves it.' : 'Double points removed.');
   } catch (err) {
     toast(err.message);
   }
@@ -401,7 +406,7 @@ document.addEventListener('click', async (e) => {
     share(`${l.name}, this week so far:\n${rows}`, `${location.origin}/join/${l.code}`);
   }
   if (action === 'invite') {
-    share(`Join my WeatherOrNot league "${league.dataset.name}" and call tomorrow's weather with me ☔`,
+    share(`Join my WeatherOrNot league "${league.dataset.name}" and guess tomorrow's weather with me ☔`,
       `${location.origin}/join/${league.dataset.code}`);
   }
   if (action === 'leave' && confirm(`Leave ${league.dataset.name}?`)) {
@@ -445,7 +450,7 @@ document.addEventListener('submit', async (e) => {
       const { league } = await api('/api/leagues', { name: new FormData(e.target).get('name') });
       e.target.reset();
       await loadAll();
-      share(`Join my WeatherOrNot league "${league.name}" and call tomorrow's weather with me ☔`,
+      share(`Join my WeatherOrNot league "${league.name}" and guess tomorrow's weather with me ☔`,
         `${location.origin}/join/${league.code}`);
     } catch (err) {
       toast(err.message);
@@ -522,7 +527,7 @@ async function handleInvite() {
     const el = $('#invite');
     el.hidden = false;
     el.innerHTML = `<div class="big">${league.owner ? `${esc(league.owner)} invited you to` : 'You\'re invited to'} ${esc(league.name)} 🏆</div>
-      <p class="muted" style="margin:0">${league.members} ${league.members === 1 ? 'player' : 'players'} calling tomorrow's weather. Think you can beat them?</p>
+      <p class="muted" style="margin:0">${league.members} ${league.members === 1 ? 'player' : 'players'} guessing tomorrow's weather. Think you can beat them?</p>
       <button class="btn">Join the league</button>`;
     el.querySelector('button').onclick = async () => {
       await api('/api/leagues/join', { code });
@@ -532,7 +537,7 @@ async function handleInvite() {
       $('#questions').scrollIntoView({ behavior: 'smooth' });
     };
   } catch {
-    toast('That invite link has expired');
+    toast("That invite link doesn't work. Ask for a fresh one?");
   }
 }
 

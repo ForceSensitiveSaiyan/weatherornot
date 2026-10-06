@@ -73,7 +73,7 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [ ] Invite links: picking your town also joins the league, in one tap
 - [ ] Shared results get their own link, so the intro can say "Sam got 2/3 in Manchester. Your go?"
 - [x] Plain-English pass on the wording: "★ Double it" instead of "banker", "+7 pts" with "Less likely = more points", no "line" or "calls", results say "It did: 18.1°C. You said Yes."
-- [ ] Writer's review of the new wording, then fixes
+- [x] Writer's review of the new wording, then fixes ("All done" instead of "Locked in", "★ Double points", "Yes · 7 pts", results like "It hit 18.1°C. You said Yes. ✅ +20 pts", friendlier error messages)
 - [x] You vs the forecast: each result shows "You 2/3 · Forecast 1/3"; the account card shows the last 30 days
 - [x] Titles: last week's best forecaster in each town; each league's monthly champion; league tables are now weekly, with a shareable table
 - [x] Locked to the UK, Isle of Man and Channel Islands (search offers nowhere else); each town shows its weather station before you play

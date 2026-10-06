@@ -35,7 +35,7 @@ const KINDS = {
   rain: {
     emoji: '☔️',
     title: () => 'Will it rain?',
-    detail: () => 'At least 1 mm during the day',
+    detail: () => 'Brolly needed? 1 mm or more counts.',
     observe: (day) => day?.precip,
     unit: 'mm',
   },
@@ -49,7 +49,7 @@ const KINDS = {
   wind: {
     emoji: '💨',
     title: (line) => `Gusts over ${line} mph?`,
-    detail: () => 'Strongest gust of the day',
+    detail: () => 'The strongest gust of the day',
     observe: (day) => (day?.gust == null ? null : round1(day.gust / KMH_PER_MPH)),
     unit: 'mph',
   },

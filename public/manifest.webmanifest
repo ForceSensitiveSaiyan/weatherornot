@@ -1,7 +1,7 @@
 {
   "name": "WeatherOrNot",
   "short_name": "WeatherOrNot",
-  "description": "Call tomorrow's weather. Beat your friends.",
+  "description": "Guess tomorrow's weather. Beat your mates.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#5b8def",

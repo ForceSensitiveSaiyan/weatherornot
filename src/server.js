@@ -102,7 +102,7 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
 }
 
 function requireUser(user) {
-  if (!user) throw new GameError('Play a game first', 401);
+  if (!user) throw new GameError('Answer a question first so we know who you are.', 401);
   return user;
 }
 
@@ -131,12 +131,12 @@ async function readJson(req) {
   let raw = '';
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 10_000) throw new GameError('Request too large', 413);
+    if (raw.length > 10_000) throw new GameError('Something went wrong. Refresh and try again.', 413);
   }
   try {
     return raw ? JSON.parse(raw) : {};
   } catch {
-    throw new GameError('Invalid JSON');
+    throw new GameError('Something went wrong. Refresh and try again.');
   }
 }
 

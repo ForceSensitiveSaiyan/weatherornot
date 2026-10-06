@@ -68,11 +68,11 @@ test('a full day: pick, bank, lock at local midnight, settle, score, recalibrate
   game.makePick(ann.id, id, 'wind', 0);
   assert.equal(game.setBanker(ann.id, id, 'rain').banker, 'rain');
   for (const key of ['rain', 'temp', 'wind']) game.makePick(ben.id, id, key, key === 'rain' ? 0 : 1);
-  assert.throws(() => game.makePick(ann.id, id, 'snow', 1), /No such question/);
+  assert.throws(() => game.makePick(ann.id, id, 'snow', 1), /Something went wrong/);
 
   clock.now = new Date('2026-10-05T23:30:00Z'); // past midnight in London
-  assert.throws(() => game.makePick(ben.id, id, 'wind', 0), /locked/);
-  assert.throws(() => game.setBanker(ben.id, id, 'wind'), /locked/);
+  assert.throws(() => game.makePick(ben.id, id, 'wind', 0), /Too late/);
+  assert.throws(() => game.setBanker(ben.id, id, 'wind'), /Too late/);
   assert.equal(await game.settleRounds(), 0);
 
   clock.now = new Date('2026-10-07T07:00:00Z');
@@ -102,7 +102,7 @@ test('the banker can move between calls and be cleared', async () => {
   assert.equal(game.setBanker(u.id, round.id, 'temp').banker, 'temp');
   assert.equal(game.setBanker(u.id, round.id, 'wind').banker, 'wind');
   assert.equal(game.setBanker(u.id, round.id, null).banker, null);
-  assert.throws(() => game.setBanker(u.id, round.id, 'snow'), /No such question/);
+  assert.throws(() => game.setBanker(u.id, round.id, 'snow'), /Something went wrong/);
 });
 
 test('guests can play, then save their account and log in elsewhere', () => {
@@ -153,7 +153,7 @@ test('leagues: create, preview the invite, join, leave', () => {
   assert.equal(game.myLeagues(ann.id)[0].standings.length, 2);
   game.leaveLeague(ben.id, league.id);
   assert.deepEqual(game.myLeagues(ben.id), []);
-  assert.throws(() => game.joinLeague(ben.id, 'NOPE00'), /No league/);
+  assert.throws(() => game.joinLeague(ben.id, 'NOPE00'), /find that league/);
 });
 
 test('place search saves results so they can be played', async () => {
@@ -161,7 +161,7 @@ test('place search saves results so they can be played', async () => {
   const [manchester] = await game.searchPlaces('manc');
   assert.equal(manchester.name, 'Manchester');
   assert.deepEqual(await game.searchPlaces('x'), []);
-  await assert.rejects(game.view(null, 'gn:nope'), /Unknown place/);
+  await assert.rejects(game.view(null, 'gn:nope'), /know that place/);
 });
 
 test('an old points-betting database is refused with a clear message', (t) => {
