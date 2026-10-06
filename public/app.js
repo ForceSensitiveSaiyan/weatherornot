@@ -491,8 +491,26 @@ function renderAccount() {
     off: '<div class="account-row"><p class="small-print">Morning notifications: off</p><button class="linkish small-print" data-action="push-on">Turn on</button></div>',
     denied: '<p class="small-print muted">Notifications are blocked for this site. You can allow them in your browser settings.</p>',
   }[state.push] ?? '';
+  // Play on another phone: a one-time login link, made when asked for.
+  const linkBox = `<div class="stack">
+      <p class="small-print muted" style="margin:0">Open this link on your other phone in the next 15 minutes and you'll be playing as ${esc(user.name)} there too. It works once. Don't send it to the group: anyone with it can play as you.</p>
+      <button class="btn" data-action="send-link">Send the link to yourself</button>
+      ${user.guest ? '<button class="linkish small-print" data-action="open-save">Or pick a login name and password</button>' : ''}
+    </div>`;
   if (!user.guest) {
-    el.innerHTML = `${versus}${nameRow}${pushRow}
+    const extra = {
+      link: linkBox,
+      password: `<form id="password-form" class="stack">
+          <p class="muted small-print" style="margin:0">Your other phones will be logged out.</p>
+          <input type="text" name="username" value="${esc(user.account)}" autocomplete="username" hidden>
+          <input name="password" type="password" placeholder="New password (6 or more characters)" aria-label="New password" autocomplete="new-password" required>
+          <div class="btn-row" style="justify-content:flex-start;margin:0"><button class="btn" type="submit">Save</button>
+          <button class="linkish small-print" type="button" data-action="cancel-rename">Cancel</button></div>
+          <p class="error"></p>
+        </form>`,
+    }[mode] ?? `<div class="account-row"><button class="linkish small-print" data-action="open-link">Play on another phone</button>
+      <button class="linkish small-print" data-action="open-password">Change password</button></div>`;
+    el.innerHTML = `${versus}${nameRow}${pushRow}${extra}
       <div class="account-row"><p class="muted small-print">Logged in as ${esc(user.account)} · ${stats.points} pts · ${stats.played} ${stats.played === 1 ? 'game' : 'games'}</p>
       <button class="linkish small-print" data-action="logout">Log out</button></div>`;
     return;
@@ -506,7 +524,8 @@ function renderAccount() {
           <button class="btn" type="submit">Save</button>
           <p class="error"></p>
         </form>`
-      : '<button class="linkish small-print" data-action="open-save">Play on another phone</button>'}`;
+      : mode === 'link' ? linkBox
+      : '<button class="linkish small-print" data-action="open-link">Play on another phone</button>'}`;
 }
 
 // ---- morning notifications -------------------------------------------------
@@ -583,7 +602,7 @@ function hit(name) {
   fetch('/api/hit', { method: 'POST', body, keepalive: true }).catch(() => {});
 }
 
-async function share(text, url) {
+async function share(text, url, copied = 'Copied. Paste it in the group chat.') {
   const payload = url ? `${text}\n${url}` : text;
   try {
     if (navigator.share) return await navigator.share(url ? { text, url } : { text });
@@ -592,7 +611,7 @@ async function share(text, url) {
   }
   try {
     await navigator.clipboard.writeText(payload);
-    toast('Copied. Paste it in the group chat.');
+    toast(copied);
   } catch {
     prompt('Copy this:', payload);
   }
@@ -788,6 +807,21 @@ const actions = {
     $('#account').dataset.mode = 'closed';
     renderAccount();
   },
+  async 'open-link'() {
+    const { code } = await api('/api/login-link', {});
+    state.loginLink = `${location.origin}/in/${code}`;
+    $('#account').dataset.mode = 'link';
+    renderAccount();
+  },
+  'send-link'() {
+    share('My WeatherOrNot login link (works once, for 15 minutes):', state.loginLink,
+      'Copied. Open it on your other phone.');
+  },
+  'open-password'() {
+    $('#account').dataset.mode = 'password';
+    renderAccount();
+    $('#account input[type=password]').focus();
+  },
   'open-save'() {
     $('#account').dataset.mode = 'save';
     renderAccount();
@@ -845,6 +879,17 @@ document.addEventListener('submit', async (e) => {
       loadAll();
     } catch (err) {
       $('#account .error').textContent = err.message;
+    }
+  }
+  if (form.id === 'password-form') {
+    e.preventDefault();
+    try {
+      await api('/api/password', { password: data.get('password') });
+      $('#account').dataset.mode = 'closed';
+      toast('Password changed.');
+      renderAccount();
+    } catch (err) {
+      form.querySelector('.error').textContent = err.message;
     }
   }
   if (form.id === 'account-form') {
@@ -1062,6 +1107,23 @@ function guessPlace() {
   return matches.length === 1 ? { match: matches[0] } : { hint: '' };
 }
 
+// ---- login links -----------------------------------------------------------
+
+// /in/<code>: a login link made on the player's other phone (or sent by us
+// after a forgotten password).
+async function useLoginLink() {
+  if (!location.pathname.startsWith('/in/')) return;
+  const code = location.pathname.match(/^\/in\/([A-Za-z0-9]{12})\/?$/)?.[1];
+  history.replaceState(null, '', '/');
+  if (!code) return toast("That login link doesn't work. Make a new one on your other phone.");
+  try {
+    const { moved } = await api('/api/login-link/use', { code });
+    toast(moved ? 'Logged in. Your answers from this phone came with you.' : 'Logged in.');
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
 // ---- invite links --------------------------------------------------------
 
 async function handleInvite() {
@@ -1129,6 +1191,7 @@ document.addEventListener('keydown', (e) => {
     hit('open-push');
     history.replaceState(null, '', '/');
   }
+  await useLoginLink();
   const friend = await readFriendLink();
   state.friend = friend ?? recentFriend();
   const me = await api('/api/me');

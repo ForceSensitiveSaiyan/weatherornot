@@ -407,3 +407,39 @@ test('share links: a challenge before the results, then the result itself', asyn
   assert.deepEqual(share.questions.map((x) => x.observed), [6, 19, 31.1]);
   assert.throws(() => game.shareView('NOPE22'), /doesn't work/);
 });
+
+test('login links work once, run out, and carry a guest over to another phone', () => {
+  const { game, clock } = setup();
+  const token = game.createGuest();
+  const me = game.userForToken(token);
+  const { code, expiresAt } = game.createLoginLink(me.id);
+  assert.match(code, /^[A-Z2-9]{12}$/);
+  assert.equal(expiresAt, '2026-10-05T12:15:00.000Z');
+  assert.equal(game.userForToken(game.useLoginLink(code.toLowerCase())).id, me.id, 'a guest, no password needed');
+  assert.throws(() => game.useLoginLink(code), /expired or been used/);
+
+  const late = game.createLoginLink(me.id).code;
+  clock.now = new Date('2026-10-05T12:16:00Z');
+  assert.throws(() => game.useLoginLink(late), /expired/);
+  assert.throws(() => game.useLoginLink(''), /expired/);
+});
+
+test('changing a password logs out other phones; an admin link gets a locked-out player back in', () => {
+  const { game, clock } = setup();
+  const here = game.createGuest();
+  const me = game.userForToken(here);
+  assert.throws(() => game.changePassword(me.id, here, 'newpass1'), /went wrong/, 'guests have no password to change');
+  game.saveAccount(me.id, 'keith', 'secret1');
+  const there = game.login('keith', 'secret1');
+  assert.throws(() => game.changePassword(me.id, here, 'short'), /at least 6/);
+  game.changePassword(me.id, here, 'newpass1');
+  assert.equal(game.userForToken(there), null, 'the other phone is logged out');
+  assert.equal(game.userForToken(here).id, me.id);
+  assert.throws(() => game.login('keith', 'secret1'), /Wrong name/);
+  assert.equal(game.userForToken(game.login('keith', 'newpass1')).id, me.id);
+
+  assert.throws(() => game.adminLoginLink('nobody'), /No player/);
+  const { code } = game.adminLoginLink('Keith');
+  clock.now = new Date('2026-10-06T11:00:00Z'); // admin links last a day
+  assert.equal(game.userForToken(game.useLoginLink(code)).id, me.id);
+});

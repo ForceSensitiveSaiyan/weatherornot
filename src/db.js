@@ -103,6 +103,14 @@ export function openDb(path = ':memory:') {
       joined_at  TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (league_id, user_id)
     );
+    -- One-time links that log you in on another phone (or, made by an admin,
+    -- get you back in after forgetting your password).
+    CREATE TABLE IF NOT EXISTS login_links (
+      code       TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      expires_at TEXT NOT NULL,
+      used       INTEGER NOT NULL DEFAULT 0
+    );
     -- Browsers that get morning notifications, and whose they are.
     CREATE TABLE IF NOT EXISTS push_subs (
       endpoint   TEXT PRIMARY KEY,

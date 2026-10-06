@@ -103,17 +103,22 @@ export function createApp(game, { limiter = rateLimiter(), stats = null, notifie
     },
     'POST /api/login': (ctx) => {
       limiter(ctx.ip, 'login', 20);
-      const guest = ctx.user?.guest ? ctx.user : null;
-      ctx.setToken(game.login(ctx.body.name, ctx.body.password));
-      // Answers made as a guest on this device carry over to the account.
-      let moved = 0;
-      try {
-        if (guest) moved = game.mergeGuest(guest.id, ctx.user.id);
-      } catch (err) {
-        console.error('Merging guest answers failed:', err.message);
-      }
-      return { ok: true, moved };
+      return signIn(ctx, game.login(ctx.body.name, ctx.body.password));
     },
+    'POST /api/password': (ctx) => {
+      limiter(ctx.ip, 'password', 10);
+      game.changePassword(requireUser(ctx.user).id, ctx.token, ctx.body.password);
+      return { ok: true };
+    },
+    'POST /api/login-link': (ctx) => {
+      limiter(ctx.ip, 'login-link', 10);
+      return game.createLoginLink(requireUser(ctx.user).id);
+    },
+    'POST /api/login-link/use': (ctx) => {
+      limiter(ctx.ip, 'login', 20);
+      return signIn(ctx, game.useLoginLink(ctx.body.code));
+    },
+    'POST /api/admin/login-link': (ctx) => (requireAdmin(ctx), game.adminLoginLink(ctx.body.name)),
     'POST /api/logout': (ctx) => {
       if (ctx.token) game.logout(ctx.token);
       ctx.setToken(null);
@@ -143,6 +148,20 @@ export function createApp(game, { limiter = rateLimiter(), stats = null, notifie
       limiter(ctx.ip, 'admin', 20);
       throw new GameError('Not found', 404);
     }
+  }
+
+  // Switches this device to another account. Answers made as a guest on this
+  // device carry over to it.
+  function signIn(ctx, token) {
+    const guest = ctx.user?.guest ? ctx.user : null;
+    ctx.setToken(token);
+    let moved = 0;
+    try {
+      if (guest) moved = game.mergeGuest(guest.id, ctx.user.id);
+    } catch (err) {
+      console.error('Merging guest answers failed:', err.message);
+    }
+    return { ok: true, moved };
   }
 
   function ensureUser(ctx) {
@@ -294,7 +313,7 @@ function siteOrigin(req) {
 // Real files are served as-is; any other path without an extension (like an
 // invite link, /join/ABC123) gets the app, which reads the URL itself.
 // The app's own pages; any other path without a file extension is a 404.
-const APP_PATHS = /^\/((join|r)\/[^/]*\/?)?$/;
+const APP_PATHS = /^\/((join|r|in)\/[^/]*\/?)?$/;
 
 const DEFAULT_PREVIEW = {
   title: 'WeatherOrNot',

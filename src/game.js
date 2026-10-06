@@ -51,6 +51,12 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     sessionUser: db.prepare(
       'SELECT u.id, u.name, u.display, u.pass_hash FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?'),
     deleteSession: db.prepare('DELETE FROM sessions WHERE token = ?'),
+    deleteOtherSessions: db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?'),
+    setPassword: db.prepare('UPDATE users SET pass_hash = ?, salt = ? WHERE id = ? AND pass_hash IS NOT NULL'),
+    insertLoginLink: db.prepare('INSERT INTO login_links (code, user_id, expires_at) VALUES (?, ?, ?)'),
+    useLoginLink: db.prepare(`
+      UPDATE login_links SET used = 1 WHERE code = ? AND used = 0 AND expires_at > ? RETURNING user_id`),
+    pruneLoginLinks: db.prepare('DELETE FROM login_links WHERE expires_at < ?'),
     upsertPlace: db.prepare(`
       INSERT INTO places (id, name, country, lat, lon, tz) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET name = excluded.name, country = excluded.country`),
@@ -185,6 +191,39 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     }
     q.setDisplay.run(display, userId);
     return display;
+  }
+
+  // A new password for a saved account, from a phone that's still logged
+  // in. Every other phone is logged out, in case someone else had it.
+  function changePassword(userId, token, password) {
+    if (String(password ?? '').length < 6) throw new GameError('Password must be at least 6 characters');
+    const { salt, hash } = hashPassword(password);
+    if (q.setPassword.run(hash, salt, userId).changes === 0) throw new GameError(OOPS, 409);
+    q.deleteOtherSessions.run(userId, String(token));
+  }
+
+  // A one-time link that logs you in somewhere else: /in/<code>. Anyone with
+  // it can play as you, so it's long, works once and soon runs out.
+  function createLoginLink(userId, minutes = 15) {
+    q.pruneLoginLinks.run(now().toISOString());
+    const code = Array.from({ length: 12 }, () => pick(CODE_ALPHABET)).join('');
+    const expiresAt = new Date(+now() + minutes * 60_000).toISOString();
+    q.insertLoginLink.run(code, userId, expiresAt);
+    return { code, expiresAt };
+  }
+
+  function useLoginLink(code) {
+    const row = q.useLoginLink.get(String(code ?? '').trim().toUpperCase(), now().toISOString());
+    if (!row) throw new GameError('That login link has expired or been used. Make a new one on your other phone.', 410);
+    return startSession(row.user_id);
+  }
+
+  // Admin: for a player who's forgotten their password and isn't logged in
+  // anywhere (they email us, we send this back). Lasts a day.
+  function adminLoginLink(name) {
+    const user = q.userByName.get(String(name ?? '').trim());
+    if (!user) throw new GameError('No player with that login name', 404);
+    return createLoginLink(user.id, 24 * 60);
   }
 
   function startSession(userId) {
@@ -658,6 +697,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
 
   return {
     createGuest, saveAccount, login, logout, userForToken, setName, createShare, shareView,
+    changePassword, createLoginLink, useLoginLink, adminLoginLink,
     searchPlaces, popularPlaces, placeInfo, view, makePick, setBanker, settleRounds, stats,
     checkPick, checkBanker, checkLeagueName, validateCredentials, mergeGuest,
     reportProblem, listReports, voidQuestion, dismissReport,

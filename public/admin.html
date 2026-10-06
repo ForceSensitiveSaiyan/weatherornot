@@ -30,6 +30,13 @@
   <h1>Player reports</h1>
   <p class="meta">Void a question only when a station reading is clearly wrong (missing hours, an impossible value, or it disagrees badly with nearby stations). Voiding gives everyone who answered 5 pts (10 if doubled) and recalculates scores.</p>
   <div id="list">Loading…</div>
+  <h1>Forgotten passwords</h1>
+  <p class="meta">For a player who emails in and isn't logged in anywhere. Make a link with their login name and email it back. It logs them in once, within 24 hours; they can then set a new password under "Change password". Only reply to the email address they wrote from.</p>
+  <form id="login-link" class="r">
+    <input name="name" placeholder="Login name" autocomplete="off" required>
+    <button>Make a login link</button>
+    <p class="meta" id="login-link-out"></p>
+  </form>
   <script>
     const token = () => sessionStorage.getItem('adminToken') ?? (sessionStorage.setItem('adminToken', prompt('Admin token') ?? ''), sessionStorage.getItem('adminToken'));
     const UNITS = { rain: 'mm', temp: '°C', wind: 'mph' };
@@ -78,6 +85,14 @@
         } else return;
         load();
       } catch (err) { alert(err.message); }
+    });
+    document.getElementById('login-link').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const out = document.getElementById('login-link-out');
+      try {
+        const { code, expiresAt } = await call('/api/admin/login-link', { name: e.target.elements.name.value });
+        out.textContent = `${location.origin}/in/${code} (works once, until ${when(expiresAt.slice(0, 19).replace('T', ' '))})`;
+      } catch (err) { out.textContent = err.message; }
     });
     loadStats();
     load();

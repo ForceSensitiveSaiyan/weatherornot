@@ -172,3 +172,32 @@ test('names, short share links and link previews that say who sent them', async 
   const { league } = await (await post('/api/leagues', { name: 'Quayside' }, cookie)).json();
   assert.match(await (await fetch(`${base}/join/${league.code}`)).text(), /og:title" content="Sam invited you to Quayside"/);
 });
+
+test('a login link opens the app, and using it moves this phone\'s guest answers over', async (t) => {
+  const game = createGame({ db: openDb(), provider: mockProvider(), geocoder: mockGeocoder() });
+  const server = createServer(createApp(game)).listen(0);
+  t.after(() => server.close());
+  const base = `http://localhost:${server.address().port}`;
+  const post = (path, body, cookie) => fetch(`${base}${path}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(cookie && { cookie }) }, body: JSON.stringify(body),
+  });
+
+  const owner = game.userForToken(game.createGuest());
+  const { code } = game.createLoginLink(owner.id);
+  const page = await fetch(`${base}/in/${code}`);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type'), /text\/html/);
+
+  // The other phone has already answered as a new guest.
+  const { round } = await (await fetch(`${base}/api/game?place=gn:2643743`)).json();
+  const picked = await post('/api/picks', { roundId: round.id, key: 'rain', pick: 1 });
+  const guestCookie = picked.headers.get('set-cookie').split(';')[0];
+  assert.equal((await post('/api/login-link', {})).status, 401, 'needs a player');
+
+  const res = await post('/api/login-link/use', { code }, guestCookie);
+  assert.deepEqual(await res.json(), { ok: true, moved: 1 });
+  const cookie = res.headers.get('set-cookie').split(';')[0];
+  const me = await (await fetch(`${base}/api/me`, { headers: { cookie } })).json();
+  assert.equal(me.user.id, owner.id);
+  assert.equal((await post('/api/login-link/use', { code })).status, 410);
+});

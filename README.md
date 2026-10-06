@@ -51,7 +51,7 @@ npm test
 | `PORT` | `3000` | |
 | `DB_PATH` | `weatherornot.db` | SQLite file. Databases from the old points-betting version are refused; delete them first. |
 | `WEATHER_PROVIDER` | `open-meteo` | `mock` for fake weather and city search |
-| `ADMIN_TOKEN` | unset | Turns on the admin page (`/admin.html`): stats and player reports. Use a long random value. |
+| `ADMIN_TOKEN` | unset | Turns on the admin page (`/admin.html`): stats, player reports and login links for forgotten passwords. Use a long random value. |
 | `OBSERVATIONS` | stations | `model` to settle on the forecast model instead of weather stations |
 | `PUBLIC_URL` | from the request | The site's public address, e.g. `https://playweatherornot.co.uk`. Set it in production so link previews (WhatsApp, Facebook, X) get absolute image URLs. |
 | `TRUST_PROXY` | `0` | How many proxies sit in front of the app (usually `1` on a host). Without it, every player looks like the same visitor to the rate limits. Leave at `0` if the app faces the internet directly. |
@@ -77,6 +77,8 @@ Anywhere else works too: it's one container (`Dockerfile`) that needs a persiste
 
 `/admin.html` (needs `ADMIN_TOKEN`) shows, for each of the last 14 days: how many played, how many were new, what share of the day before's players came back, visits, first visits, shares, and visits from shared links. Most of it comes from the game's own tables. Visits and shares are anonymous daily totals: no IDs, cookies or addresses are stored, so there's no cookie banner to add.
 
+**Forgotten passwords:** there are no email addresses on accounts. A player who's still logged in on one phone can get a one-time login link there ("Play on another phone") and set a new password. Anyone locked out everywhere emails hello@aidoo.biz; the admin page makes a login link for their login name that works once within 24 hours.
+
 ## Layout
 
 ```
@@ -97,7 +99,7 @@ compose.yaml      how the VPS runs it
 deploy/           Caddy config and the step-by-step deploy guide
 .github/workflows/deploy.yml  tests, then deploys to the VPS
 public/           the web app (plain HTML/CSS/JS), icons, share image (og.png),
-                  privacy.html, terms.html, admin.html (stats and reports)
+                  privacy.html, terms.html, admin.html (stats, reports, login links)
 public/fonts/     Fredoka, self-hosted (SIL Open Font License, see OFL.txt)
 test/             node:test suites
 ```

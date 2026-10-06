@@ -4,6 +4,13 @@ What changed, newest first. Not live yet: the first public version will be 1.0.0
 
 ## Unreleased
 
+### 6 October 2026: login links and forgotten passwords
+
+- **"Play on another phone" now gives you a login link.** Send it to yourself, open it on the other phone within 15 minutes, and you're playing there as you, streak and leagues included. It works once. Guests don't need a password for this any more; picking a login name and password is still there underneath.
+- **Change password** in the account card for saved accounts. Your other phones are logged out.
+- **Forgot your password?** The login dialog explains what to do: get a link from a phone you're still playing on, or email hello@aidoo.biz. The admin page makes a login link for a login name that works once within 24 hours, to email back.
+- No email addresses are stored and no email service is needed. A reset link sent by email would need both; see `ROADMAP.md`.
+
 ### 6 October 2026: "All done" bar
 
 - **Once your three are in,** a bar at the bottom of the screen says "All done" with the time left, plus Challenge (and Share result when there's one to share). It steps aside while "That's your three." or the results card is on screen, and while you're typing.

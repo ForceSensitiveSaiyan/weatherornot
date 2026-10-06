@@ -132,7 +132,8 @@ A designer and a tester reviewed it for simplicity, personality and anything tha
 - [x] Morning notification: "You called it. 3/3 in Douglas" (web push, not before 7.30am). Needs the two VAPID secrets to switch on
 - [x] Animated results reveal with points counting up, then the Share button (a browser only opens the share sheet from a tap)
 - [x] "All done" bar that stays at the bottom of the screen with Challenge and Share
-- [ ] Password reset (or sign in with a link by email)
+- [x] Forgotten passwords without email: one-time login links from a phone you still play on ("Play on another phone"), Change password, and admin-made login links for players who email in
+- [ ] 💭 Self-service reset by email, if the friends test shows people get locked out: needs an optional email on accounts and an email service (Postmark, Resend or similar)
 
 ## Phase 4: Friends test (2 weeks)
 
