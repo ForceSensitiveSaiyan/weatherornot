@@ -21,7 +21,9 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [ ] Add one "nearest guess" question per day (e.g. tomorrow's high), scored by how close you get
 - [ ] Rebalance scoring so the leaderboard actually spreads out
 - [x] Simulator (`npm run simulate`): leagues of copiers, random guessers, contrarians and players with a small local edge, over 2,000 simulated months
-- [ ] Rerun the simulator on real UK forecasts vs outcomes (`npm run simulate -- --real`), blocked today by the sandbox's shared Open-Meteo quota
+- [x] Rerun the simulator on real UK forecasts vs outcomes (`npm run simulate -- --real`): 14 UK cities, 6 Aug to 4 Oct 2026
+- [ ] Calibrate each city's lines for forecast bias (see real-data findings), so "always say yes" isn't the new copying
+- [ ] Rework the nearest guess so copying the forecast doesn't win it (closest-only points, or guess something forecasts are bad at, like rainfall amount), and check it in the simulator before building
 
 **Simulator findings (synthetic UK autumn weather):**
 
@@ -34,6 +36,18 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - Putting the line on the forecast removes copying's advantage on the three calls: copying is no better than guessing.
 - The nearest guess is what breaks the ties. It brings back a small edge for copying (the forecast is a sensible guess) but you only win the day by getting closer than everyone else.
 - In every design, anyone who genuinely knows better than the forecast wins the month. With lines on the forecast, everyone else is on an equal footing day to day.
+
+**Real UK data (14 cities, 60 days each):**
+
+| | Current design | Lines on the forecast (3 calls) | Lines on the forecast + nearest guess |
+|---|---|---|---|
+| Copier vs random guesser, points a day | 23.9 vs 18.8 | 15.1 vs 14.9 | 31.1 vs 21.5 |
+| Days where the top score is shared | 71% | 61% | 16% |
+
+- The next-day rain forecast was right on 82% of days. Highs were off by 0.62°C on average and within 1°C on 84% of days. (This compares the model's day-before run with its own latest values, which is also how the game settles, so it slightly flatters the forecast compared with weather stations.)
+- The synthetic results hold: the current design rewards copying, and putting the line on the forecast removes that on the three calls.
+- **New problem:** real forecasts are so good at the daily high that copying wins the nearest guess easily (31.1 vs 30.4 for the "local knowledge" players). The nearest guess needs reworking before we build it.
+- **Forecast bias:** in 11 of 14 cities the high beat the forecast more often than not (London 65% of days, Brighton 70%, Edinburgh 67%, Manchester the exception at 45%). Gusts came in about 1 mph under the forecast almost everywhere. With a line exactly on the forecast, "always say yes to warmer" would win about 65% of the time in London. We should shift each city's lines by its recent bias, so the calls stay genuine coin flips.
 
 ## Phase 2: Ready for the friends test
 
