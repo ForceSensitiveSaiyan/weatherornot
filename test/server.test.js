@@ -62,3 +62,81 @@ test('admin endpoints need the admin token, and are off without one', async (t) 
   assert.equal(ok.status, 200);
   assert.deepEqual(await ok.json(), { reports: [] });
 });
+
+async function startServer(t, env = {}) {
+  Object.assign(process.env, env);
+  const game = createGame({ db: openDb(), provider: mockProvider(), geocoder: mockGeocoder() });
+  const server = createServer(createApp(game)).listen(0);
+  t.after(() => { server.close(); for (const k of Object.keys(env)) delete process.env[k]; });
+  return { game, base: `http://localhost:${server.address().port}`, port: server.address().port };
+}
+
+test('malformed addresses get a 400 and never crash the server', async (t) => {
+  const { base, port } = await startServer(t);
+  assert.equal((await fetch(`${base}/%E0%A4%A`)).status, 400);
+  // A raw request line that isn't a valid URL.
+  const { connect } = await import('node:net');
+  const reply = await new Promise((resolve) => {
+    const sock = connect(port, 'localhost', () => sock.write('GET http://[ HTTP/1.1\r\nHost: x\r\n\r\n'));
+    let data = '';
+    sock.on('data', (d) => { data += d; sock.end(); });
+    sock.on('close', () => resolve(data));
+  });
+  assert.match(reply, /^HTTP\/1\.1 400/);
+  assert.equal((await fetch(`${base}/api/me`)).status, 200, 'still up');
+  assert.equal((await fetch(`${base}/nope`)).status, 404);
+  assert.equal((await fetch(`${base}/join/ABC123/`)).status, 200);
+});
+
+test('X-Forwarded-For is ignored unless TRUST_PROXY is set', async (t) => {
+  const { base } = await startServer(t);
+  const login = (ip) => fetch(`${base}/api/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': ip },
+    body: JSON.stringify({ name: 'nobody', password: 'wrongpass' }),
+  });
+  for (let i = 0; i < 20; i++) assert.equal((await login(`10.0.0.${i}`)).status, 401);
+  assert.equal((await login('10.0.0.99')).status, 429, 'a fake header does not reset the limit');
+});
+
+test('with TRUST_PROXY=1, only the address our proxy added counts', async (t) => {
+  const { base } = await startServer(t, { TRUST_PROXY: '1' });
+  const login = (xff) => fetch(`${base}/api/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': xff },
+    body: JSON.stringify({ name: 'nobody', password: 'wrongpass' }),
+  });
+  // A client can prepend anything; the proxy appends the real address last.
+  for (let i = 0; i < 20; i++) await login(`6.6.6.${i}, 203.0.113.7`);
+  assert.equal((await login('1.2.3.4, 203.0.113.7')).status, 429);
+  assert.equal((await login('203.0.113.8')).status, 401, 'a different real client is unaffected');
+});
+
+test('junk requests get a 400, not a 500, and never create guest accounts', async (t) => {
+  const { base, game } = await startServer(t);
+  const post = (path, body) => fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  const view = await (await fetch(`${base}/api/game?place=gn:2643743`)).json();
+  const cases = [
+    ['/api/picks', 'null'], ['/api/picks', '[]'], ['/api/picks', '"x"'],
+    ['/api/picks', JSON.stringify({ roundId: view.round.id, pick: 1 })],
+    ['/api/picks', JSON.stringify({ roundId: view.round.id, key: { a: 1 }, pick: 1 })],
+    ['/api/picks', JSON.stringify({ roundId: 99999, key: 'rain', pick: 1 })],
+    ['/api/banker', JSON.stringify({ roundId: view.round.id, key: 7 })],
+    ['/api/leagues', JSON.stringify({ name: { a: 1 } })],
+    ['/api/leagues', JSON.stringify({ name: '   ' })],
+    ['/api/leagues/join', JSON.stringify({ code: 'NOPE00' })],
+    ['/api/account', JSON.stringify({ name: 'x', password: 'y' })],
+  ];
+  for (const [path, body] of cases) {
+    const res = await post(path, body);
+    assert.ok(res.status >= 400 && res.status < 500, `${path} ${body} -> ${res.status}`);
+    assert.equal(res.headers.get('set-cookie'), null, `${path} ${body} made a guest`);
+  }
+  assert.equal((await post('/api/logout', '{}')).status, 200, 'logout without a cookie');
+  assert.equal(game.listReports().length, 0);
+});
+
+test('shared links can look up a place by id', async (t) => {
+  const { base } = await startServer(t);
+  const { place } = await (await fetch(`${base}/api/places/info?id=gn:3042237`)).json();
+  assert.equal(place.name, 'Douglas');
+  assert.equal((await fetch(`${base}/api/places/info?id=gn:1`)).status, 404);
+});

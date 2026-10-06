@@ -1,13 +1,23 @@
 const $ = (sel) => document.querySelector(sel);
 const state = { user: null, stats: null, game: null, leagues: [], placeId: null, popular: [], resultsFirst: false };
 
-async function api(path, body) {
+async function request(path, body) {
   const res = await fetch(path, body
     ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     : {});
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? 'Something went wrong');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? 'Something went wrong. Refresh and try again.');
   return data;
+}
+
+// Writes go one at a time. A new player's first answer creates their guest
+// account; sending the next one before that reply lands would make a second.
+let writes = Promise.resolve();
+function api(path, body) {
+  if (!body) return request(path);
+  const result = writes.then(() => request(path, body));
+  writes = result.catch(() => {});
+  return result;
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -71,7 +81,7 @@ function untilText(iso) {
   if (ms <= 0) return 'locked';
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
-  return h ? `${h}h ${m}m` : `${m}m`;
+  return h ? `${h}h ${m}m` : m ? `${m}m` : 'under a minute';
 }
 
 const picksMade = () => state.game.round.questions.filter((q) => q.myPick != null).length;
@@ -83,6 +93,13 @@ function render() {
   $('#streak').hidden = !stats?.streak;
   if (stats?.streak) $('#streak').textContent = `🔥 ${stats.streak}`;
   $('#main').hidden = !game;
+  $('#load-error').hidden = !state.loadError || !!game;
+  if (state.loadError && !game) {
+    $('#place-name').textContent = state.placeName ?? 'Pick your town';
+    $('#load-error').innerHTML = `<p><strong>${esc(state.loadError)}</strong></p>
+      <div class="btn-row"><button class="btn" data-action="retry">Try again</button>
+      <button class="btn secondary" data-action="change-town">Pick another town</button></div>`;
+  }
   if (!game) return;
 
   const { round, place } = game;
@@ -104,7 +121,7 @@ function render() {
     ? `🏆 Last week's best forecaster: <strong>${game.champion.names.map(esc).join(' and ')}</strong> (${game.champion.points} pts)`
     : '';
   $('#hero-station').textContent = game.station
-    ? `Results from ${game.station.name} weather station, ${game.station.km} km away`
+    ? `Results from ${game.station.name} weather station · ${game.station.km}\u00a0km away`
     : 'No weather station nearby, so results use the forecast model';
   renderLeagues();
   renderAccount();
@@ -114,11 +131,15 @@ function renderCountdown() {
   const { round } = state.game ?? {};
   if (!round) return;
   const left = untilText(round.closesAt);
+  if (left === 'locked' && !state.lockedShown) {
+    state.lockedShown = true;
+    $('#questions').innerHTML = round.questions.map((q) => questionCard(q, round)).join('');
+  }
   const day = fmtDay(round.date, { weekday: 'short', day: 'numeric', month: 'short' });
   const dots = round.questions.map((q) => `<i class="${q.myPick != null ? 'on' : ''}"></i>`).join('');
   $('#hero-sub').innerHTML = left === 'locked'
     ? `${day} · Game #${round.number} · answers closed 🔒`
-    : `${day} · Game #${round.number} · answers close in ${left} <span class="dots" aria-label="${picksMade()} of 3 answered">${dots}</span>`;
+    : `${day} · Game #${round.number} · <span class="nowrap">answers close in ${left} <span class="dots" role="img" aria-label="${picksMade()} of 3 answered">${dots}</span></span>`;
 }
 
 // The crowd split, once you've picked and at least three people have.
@@ -145,7 +166,7 @@ function questionCard(q, round) {
     </div>
     <div class="q-foot">
       <p class="hint">${esc(hintFor(q))}</p>
-      <button class="banker" aria-pressed="${banked}" ${locked} title="Double points on this one. One a day.">★ ${banked ? 'Doubled' : 'Double points'}</button>
+      <button class="banker" aria-pressed="${banked}" ${locked} aria-label="${banked ? 'Doubled' : 'Double points on'}: ${esc(q.title)}" title="Double points on this one. One a day.">★ ${banked ? 'Doubled' : 'Double points'}</button>
     </div>
     ${crowdLine(q)}
   </article>`;
@@ -182,7 +203,7 @@ function resultHeadline(r) {
 // "It hit 18.1°C." in words that fit each question.
 function outcomeText(q) {
   const v = fmt(q.result.observed, q.unit);
-  if (q.result.voided) return `Scrapped after we checked the station data (${esc(q.result.voided)}). Everyone who answered gets 5 pts (10 if doubled).`;
+  if (q.result.voided) return `${esc(q.result.voided[0].toUpperCase() + q.result.voided.slice(1))}. 5 pts each (10 if doubled).`;
   if (q.result.answer == null) return `Exactly ${v}, a dead heat. Everyone who answered gets 5 pts (10 if doubled).`;
   const yes = q.result.answer === 1;
   if (q.key === 'rain') return yes ? `It rained ${v}.` : q.result.observed > 0 ? `Only ${v}, so no.` : 'It stayed dry.';
@@ -207,13 +228,16 @@ function reportBlock(r) {
         ${r.questions.map((q) => `<option value="${q.key}">${esc(q.title)}</option>`).join('')}
         <option value="">Something else</option>
       </select>
-      <textarea name="message" rows="3" maxlength="500" required placeholder="What looks wrong? E.g. it poured all afternoon but it says 0 mm."></textarea>
+      <textarea name="message" rows="3" maxlength="500" required aria-label="What looks wrong?" placeholder="What looks wrong? E.g. it poured all afternoon but it says 0 mm."></textarea>
       <button class="btn small" type="submit">Send</button>
       <p class="small-print muted" style="margin:0">If a station reading is clearly wrong, we scrap that question for everyone and give 5 pts each.</p>
     </form></details>`;
 }
 
-const markFor = (score) => (!score ? '' : score.correct == null ? '➖' : score.correct ? '✅' : '❌');
+// Questions that counted: everything except scrapped ones and dead heats.
+const scoredCount = (r) => r.questions.filter((q) => q.result?.answer != null).length;
+
+const markFor = (score) => (!score ? '' : score.correct == null ? '' : score.correct ? '✅' : '❌');
 
 function renderResults() {
   const last = state.game.lastRound;
@@ -225,13 +249,14 @@ function renderResults() {
   el.innerHTML = `
     <div class="result-head">
       <h2>${fmtDay(last.date, { weekday: 'long' })}'s results · Game #${last.number}</h2>
-      ${played ? `<div class="result-score">${last.score.correct}/${last.questions.length}</div>` : ''}
+      ${played ? `<div class="result-score">${last.score.correct}/${scoredCount(last)}</div>` : ''}
     </div>
-    ${played ? `<p class="muted" style="margin:4px 0 0">${resultHeadline(last)}</p>` : ''}
-    ${played && last.forecast ? `<p class="versus">You got ${last.score.correct} of ${last.forecast.total}. Just going with the forecast got ${last.forecast.correct}.</p>` : ''}
+    ${played ? `<p class="result-headline">${resultHeadline(last)}</p>` : ''}
+    ${played && last.forecast ? `<p class="versus muted">You got ${last.score.correct} of ${scoredCount(last)}. Just going with the forecast got ${last.forecast.correct}.</p>` : ''}
     <p class="source">${sourceLine(last.source)}</p>
     <ul class="result-list">${last.questions.map((q) => {
-      const tags = q.score?.banker ? '<span class="bonus">★ Doubled</span>' : '';
+      const tags = (q.result.voided ? '<span class="bonus scrapped">Scrapped</span>' : '')
+        + (q.score?.banker ? '<span class="bonus">★ Doubled</span>' : '');
       const you = q.score ? ` You said ${q.score.pick ? 'Yes' : 'No'}.` : '';
       return `<li><span class="r-emoji" aria-hidden="true">${q.emoji}</span>
         <span><strong>${esc(titleOf(q))}</strong>${tags}<br>
@@ -328,25 +353,28 @@ async function share(text, url) {
 
 function resultText() {
   const { lastRound: r, place } = state.game;
-  const grid = r.questions.map((q) => `${q.emoji}${markFor(q.score) || '⬜'}${q.score?.banker ? '★' : ''}`).join(' ');
+  const grid = r.questions.map((q) => `${q.emoji}${q.result?.answer == null ? '➖' : markFor(q.score) || '⬜'}${q.score?.banker ? '⭐' : ''}`).join(' ');
   const streak = state.stats?.streak ? ` · 🔥${state.stats.streak}` : '';
-  const vs = r.forecast ? ` (the forecast got ${r.forecast.correct}/${r.forecast.total})` : '';
-  return `WeatherOrNot #${r.number} · ${place.name}\n${grid}\n${r.score.correct}/${r.questions.length}${vs} · ${r.score.points} pts${streak}`;
+  const vs = r.forecast ? ` (the forecast got ${r.forecast.correct}/${scoredCount(r)})` : '';
+  return `WeatherOrNot #${r.number} · ${place.name}\n${grid}\n${r.score.correct}/${scoredCount(r)}${vs} · ${r.score.points} pts${streak}`;
 }
 
 // ---- actions -------------------------------------------------------------
 
 async function loadGame() {
   if (!state.placeId) return render();
+  state.loadError = null;
   try {
     state.game = await api(`/api/game?place=${encodeURIComponent(state.placeId)}`);
     if (state.game.stats) state.stats = state.game.stats;
+    store.set('place', JSON.stringify({ id: state.game.place.id, name: state.game.place.name }));
     // A result you haven't seen yet goes to the top, once.
     const last = state.game.lastRound;
     state.resultsFirst = !!last?.score && store.get('seenResult') !== String(last.id);
     if (state.resultsFirst) store.set('seenResult', String(last.id));
   } catch (err) {
-    toast(err.message);
+    state.game = null;
+    state.loadError = err.message;
     if (/know that place|from a weather station/.test(err.message)) openPicker();
   }
   render();
@@ -369,9 +397,10 @@ $('#questions').addEventListener('click', async (e) => {
     });
     state.game.round = round;
     $('#questions').innerHTML = round.questions.map((q) => questionCard(q, round)).join('');
+    $(`.q[data-key="${key}"] .banker`)?.focus();
     renderDone();
     if (!state.user) loadAll();
-    toast(round.banker ? 'Doubled. You get one a day, so tapping another moves it.' : 'Double points removed.');
+    toast(round.banker ? '★ Doubled. One a day: tap another to move it.' : 'Double points removed.');
   } catch (err) {
     toast(err.message);
   }
@@ -432,13 +461,23 @@ document.addEventListener('click', async (e) => {
       `${location.origin}/join/${league.dataset.code}`);
   }
   if (action === 'leave' && confirm(`Leave ${league.dataset.name}?`)) {
-    await api('/api/leagues/leave', { leagueId: Number(league.dataset.id) });
+    try {
+      await api('/api/leagues/leave', { leagueId: Number(league.dataset.id) });
+    } catch (err) {
+      toast(err.message);
+    }
     loadAll();
   }
   if (action === 'logout') {
-    await api('/api/logout', {});
+    try {
+      await api('/api/logout', {});
+    } catch (err) {
+      toast(err.message);
+    }
     loadAll();
   }
+  if (action === 'retry') loadGame();
+  if (action === 'change-town') openPicker();
   if (action === 'open-save' || action === 'toggle-login') {
     const el = $('#account');
     el.dataset.mode = action === 'open-save' ? 'save' : el.dataset.mode === 'login' ? 'closed' : 'login';
@@ -458,9 +497,11 @@ document.addEventListener('submit', async (e) => {
     const form = new FormData(e.target);
     const mode = e.target.dataset.mode;
     try {
-      await api(mode === 'login' ? '/api/login' : '/api/account', { name: form.get('name'), password: form.get('password') });
+      const result = await api(mode === 'login' ? '/api/login' : '/api/account', { name: form.get('name'), password: form.get('password') });
       $('#account').dataset.mode = 'closed';
-      toast(mode === 'login' ? 'Welcome back!' : 'Saved. Your streak is safe 🔥');
+      toast(mode === 'login'
+        ? (result.moved ? "Welcome back! Your answers from this device came with you." : 'Welcome back!')
+        : 'Saved. Your streak is safe 🔥');
       loadAll();
     } catch (err) {
       e.target.querySelector('.error').textContent = err.message;
@@ -481,6 +522,9 @@ document.addEventListener('submit', async (e) => {
   }
   if (e.target.id === 'create-league') {
     e.preventDefault();
+    const button = e.target.querySelector('button');
+    if (button.disabled) return;
+    button.disabled = true;
     try {
       const { league } = await api('/api/leagues', { name: new FormData(e.target).get('name') });
       e.target.reset();
@@ -489,6 +533,8 @@ document.addEventListener('submit', async (e) => {
         `${location.origin}/join/${league.code}`);
     } catch (err) {
       toast(err.message);
+    } finally {
+      button.disabled = false;
     }
   }
 });
@@ -497,7 +543,7 @@ document.addEventListener('submit', async (e) => {
 
 async function choosePlace(place) {
   state.placeId = place.id;
-  store.set('place', JSON.stringify(place));
+  state.placeName = place.name;
   if ($('#place-dialog').open) $('#place-dialog').close();
   const fromIntro = !$('#intro').hidden;
   hideIntro();
@@ -570,7 +616,8 @@ function readShareParams() {
   const place = q.get('place') ?? '';
   const name = (q.get('from') ?? '').slice(0, 20);
   const town = (q.get('town') ?? '').slice(0, 60);
-  if (!name || !town || !/^gn:\d+$/.test(place) || !(of >= 1 && of <= 3) || !(got >= 0 && got <= of)) return null;
+  if (!name || !town || !/^gn:\d+$/.test(place) || !Number.isInteger(of) || !Number.isInteger(got)
+    || of < 1 || of > 3 || got < 0 || got > of) return null;
   return { name, got, of, town, place };
 }
 
@@ -627,8 +674,12 @@ function guessPlace() {
 // ---- invite links --------------------------------------------------------
 
 async function handleInvite() {
-  const code = location.pathname.match(/^\/join\/([A-Za-z0-9]{6})$/)?.[1];
-  if (!code) return;
+  if (!location.pathname.startsWith('/join/')) return;
+  const code = location.pathname.match(/^\/join\/([A-Za-z0-9]{6})\/?$/)?.[1];
+  if (!code) {
+    history.replaceState(null, '', '/');
+    return toast("That invite link doesn't work. Ask for a fresh one?");
+  }
   history.replaceState(null, '', '/');
   try {
     const { league } = await api(`/api/leagues/preview?code=${code}`);
@@ -665,13 +716,42 @@ async function handleInvite() {
 
 $('#year').textContent = new Date().getFullYear();
 
+document.querySelector('.footer-links a[href="#how"]').addEventListener('click', (e) => {
+  if (!document.body.classList.contains('intro-mode')) return;
+  e.preventDefault();
+  $('.demos').scrollIntoView({ behavior: 'smooth' });
+});
+
+// Escape closes the ⋯ menu, and closes the town picker in one press.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  document.querySelectorAll('details.menu[open]').forEach((d) => { d.open = false; d.querySelector('summary').focus(); });
+  if (e.target.id === 'place-search') {
+    e.preventDefault();
+    $('#place-dialog').close();
+  }
+});
+
 (async function start() {
   ({ places: state.popular } = await api('/api/places/popular'));
   const saved = store.get('place');
   const guess = guessPlace();
-  const from = readShareParams();
-  const place = saved ? JSON.parse(saved) : null;
-  if (place) state.placeId = place.id;
+  let from = readShareParams();
+  if (from) {
+    // Use the real name for the place id, so a tampered link can't say one town and load another.
+    try {
+      from.town = (await api(`/api/places/info?id=${encodeURIComponent(from.place)}`)).place.name;
+    } catch {
+      from = null;
+    }
+  }
+  const me = await api('/api/me');
+  // A returning player on a new browser carries on where they last played.
+  const place = saved ? JSON.parse(saved) : me.stats?.lastPlace ?? null;
+  if (place) {
+    state.placeId = place.id;
+    state.placeName = place.name;
+  }
   await loadAll();
   if (!place) showIntro({ guess, from });
   await handleInvite();

@@ -305,3 +305,66 @@ body.intro-mode .hero, body.intro-mode #main { display: none !important; }
   .cta { max-width: 440px; }
   .fine, .peek { text-align: left; }
 }
+
+/* ---- Fixes from the QA and UI reviews ---- */
+/* Grid children can't be widened by a wide input or long word (320px phones). */
+main > *, .lay > *, .app > * { min-width: 0; }
+form.inline input { width: 100%; min-width: 0; }
+.big, .league-head strong, .q-title, .place-button, .result-head h2, .board .name, .champion, .intro-text h1 { overflow-wrap: anywhere; }
+.nowrap { white-space: nowrap; }
+
+/* Phones: the play button comes before the examples. */
+@media (max-width: 959px) {
+  .lay { grid-template-areas: "intro" "cta" "demo" "extra"; }
+  .a-cta { margin: 0 0 16px; }
+}
+
+/* Small links keep their small size (the font shorthand was resetting it). */
+.linkish { font: unset; font-family: inherit; font-weight: inherit; font-size: inherit; color: var(--accent); }
+.linkish.small-print, .small-print .linkish { font-size: .8125rem; }
+
+/* Toasts: full width of the screen when needed, above the home bar. */
+.toast { width: max-content; max-width: calc(100vw - 32px); bottom: calc(24px + env(safe-area-inset-bottom)); text-align: center; }
+
+/* Results: the headline leads, the stat follows. */
+.result-headline { margin: 4px 0 0; font: 600 1.25rem/1.25 var(--font-display); color: var(--text); }
+.results .versus { font-family: inherit; font-weight: 500; font-size: .9375rem; margin-top: 4px; }
+.result-list strong { font-family: var(--font-display); font-weight: 600; }
+.result-list .r-actual { display: block; line-height: 1.4; margin-top: 2px; }
+.bonus.scrapped { background: var(--line); color: var(--text); }
+.results { border: 0; }
+
+/* Error card when a town can't load. */
+.load-error { text-align: center; margin-bottom: 14px; }
+.load-error p { margin: 0; }
+
+/* Invite and shared-result cards: a warm tint, not a warning border. */
+.invite { border: 0; background: color-mix(in srgb, var(--gold) 12%, var(--card)); }
+
+/* Intro: chips fit on one line, readable small print, solid kicker. */
+.city { font-size: .875rem; padding: 0 12px; min-height: 38px; }
+.fine { font-weight: 500; text-shadow: 0 1px 6px rgb(0 0 0 / .35); }
+.kicker { background: rgb(0 0 0 / .18); border-color: rgb(255 255 255 / .3); }
+.choice small { opacity: 1; }
+
+/* Picker: a too-far town keeps its explanation readable. */
+.place-list button:disabled { opacity: 1; }
+.place-list button:disabled strong, .place-list button:disabled > small:first-of-type { opacity: .5; }
+@media (hover: none) { .place-list button:hover { background: none; } }
+
+/* Text pages */
+.doc ul { padding-left: 1.2em; }
+
+/* Dark mode: these come last so they win. */
+@media (prefers-color-scheme: dark) {
+  html { background: #0b1220; }
+  .linkish, .btn.secondary, .board li.me .rank { color: #8fb4ff; border-color: #8fb4ff; }
+  .draft { background: #3a3110; color: #f6e3a0; }
+  .bonus.scrapped { background: #2a3546; color: #eef2f7; }
+  :root[data-sky='sunny'], :root[data-sky='snow'], :root[data-sky='fog'] { --night-strength: .35; }
+  body { --night: linear-gradient(rgb(6 10 22 / var(--night-strength, .55)), rgb(6 10 22 / var(--night-strength, .55))); }
+}
+@media (max-width: 479px) {
+  .cities { display: grid; grid-template-columns: 1fr 1fr; }
+  .city { width: 100%; }
+}

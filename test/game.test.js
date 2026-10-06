@@ -309,3 +309,40 @@ test('towns more than 45 km from a weather station cannot be played', async () =
   const [bristol] = (await game.searchPlaces('bristol'));
   assert.deepEqual([bristol.name, bristol.playable, bristol.stationKm], ['Bristol', true, 42]);
 });
+
+test('logging in from a guest session keeps the guest\'s answers, unless the account already answered', async () => {
+  const { game, player } = setup();
+  const { round } = await game.view(null, LONDON);
+  const saved = game.userForToken(game.createGuest());
+  game.saveAccount(saved.id, 'keith', 'secret1');
+  const guest = player();
+  game.makePick(guest.id, round.id, 'wind', 0);
+  game.setBanker(guest.id, round.id, 'wind');
+  assert.equal(game.mergeGuest(guest.id, saved.id), 1);
+  const v = await game.view(saved.id, LONDON);
+  assert.equal(v.round.questions.find((q) => q.key === 'wind').myPick, 0);
+  assert.equal(v.round.banker, 'wind');
+  assert.equal(v.stats.lastPlace.name, 'London');
+
+  const other = player();
+  game.makePick(other.id, round.id, 'rain', 1);
+  assert.equal(game.mergeGuest(other.id, saved.id), 0, 'account already answered this game');
+});
+
+test('"St Helier" finds Saint Helier, and GB results name the county', async () => {
+  const names = [];
+  const fetchImpl = async (url) => {
+    const name = new URL(url).searchParams.get('name');
+    names.push(name);
+    const results = name === 'Saint Helier'
+      ? [{ id: 3, name: 'Saint Helier', country_code: 'JE', country: 'Jersey', admin1: 'St Helier', latitude: 49.19, longitude: -2.1, timezone: 'Europe/Jersey' }]
+      : name === 'Newport'
+        ? [{ id: 4, name: 'Newport', country_code: 'GB', country: 'United Kingdom', admin1: 'England', admin2: 'Shropshire', latitude: 52.77, longitude: -2.38, timezone: 'Europe/London' }]
+        : [];
+    return { ok: true, json: async () => ({ results }) };
+  };
+  const geocoder = openMeteoGeocoder({ fetchImpl });
+  assert.deepEqual((await geocoder.search('St Helier')).map((r) => r.name), ['Saint Helier']);
+  assert.deepEqual(names, ['St Helier', 'Saint Helier']);
+  assert.deepEqual((await geocoder.search('Newport')).map((r) => r.country), ['Shropshire, England']);
+});

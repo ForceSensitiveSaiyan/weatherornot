@@ -40,6 +40,8 @@ export function openMeteoGeocoder({ fetchImpl = fetch } = {}) {
   return {
     async search(query) {
       let results = await lookup(query);
+      // The geocoder knows "Saint Helier" but not "St Helier".
+      if (!results.length && /^st\.?\s/i.test(query)) results = await lookup(query.replace(/^st\.?\s+/i, 'Saint '));
       // The geocoder only matches place names, so "Douglas, Isle of Man" or
       // "Douglas Isle of Man" finds nothing. Search the first part and use
       // the rest to pick the right one.
@@ -57,7 +59,8 @@ export function openMeteoGeocoder({ fetchImpl = fetch } = {}) {
         .map((r) => ({
           id: `gn:${r.id}`,
           name: r.name,
-          country: homeLabel(r),
+          // County too, so two Newports can be told apart.
+          country: [r.country_code === 'GB' ? r.admin2 : null, homeLabel(r)].filter(Boolean).join(', '),
           lat: r.latitude,
           lon: r.longitude,
           tz: r.timezone,

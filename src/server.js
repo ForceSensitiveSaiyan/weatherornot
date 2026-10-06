@@ -28,19 +28,23 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
       return { places: await game.searchPlaces(query.get('q')) };
     },
     'GET /api/game': async ({ user, query }) => game.view(user?.id, query.get('place')),
+    'GET /api/places/info': ({ query }) => ({ place: game.placeInfo(query.get('id')) }),
     'POST /api/picks': (ctx) => {
+      const { roundId, key, pick } = ctx.body;
+      game.checkPick(Number(roundId), key, pick); // before making a guest, so junk requests don't create accounts
       const user = ensureUser(ctx);
-      const round = game.makePick(user.id, Number(ctx.body.roundId), ctx.body.key, ctx.body.pick);
+      const round = game.makePick(user.id, Number(roundId), key, pick);
       return { round, user, stats: game.stats(user.id) };
     },
     'POST /api/banker': (ctx) => {
+      const key = ctx.body.key ?? null;
+      game.checkBanker(Number(ctx.body.roundId), key);
       const user = ensureUser(ctx);
-      const key = ctx.body.key == null ? null : String(ctx.body.key);
       return { round: game.setBanker(user.id, Number(ctx.body.roundId), key) };
     },
     'POST /api/reports': (ctx) => {
       limiter(ctx.ip, 'report', 20);
-      const key = ctx.body.key == null || ctx.body.key === '' ? null : String(ctx.body.key);
+      const key = ctx.body.key == null || ctx.body.key === '' ? null : ctx.body.key;
       game.reportProblem(requireUser(ctx.user).id, Number(ctx.body.roundId), key, ctx.body.message);
       return { ok: true };
     },
@@ -48,7 +52,7 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
     'GET /api/admin/reports': (ctx) => (requireAdmin(ctx), { reports: game.listReports() }),
     'POST /api/admin/void': (ctx) => {
       requireAdmin(ctx);
-      game.voidQuestion(Number(ctx.body.roundId), String(ctx.body.key), ctx.body.reason);
+      game.voidQuestion(Number(ctx.body.roundId), ctx.body.key, ctx.body.reason);
       return { ok: true };
     },
     'POST /api/admin/dismiss': (ctx) => {
@@ -58,23 +62,33 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
     },
     'POST /api/account': (ctx) => {
       limiter(ctx.ip, 'account', 20);
+      game.validateCredentials(ctx.body.name, ctx.body.password);
       game.saveAccount(ensureUser(ctx).id, ctx.body.name, ctx.body.password);
       return { ok: true };
     },
     'POST /api/login': (ctx) => {
       limiter(ctx.ip, 'login', 20);
+      const guest = ctx.user?.guest ? ctx.user : null;
       ctx.setToken(game.login(ctx.body.name, ctx.body.password));
-      return { ok: true };
+      // Answers made as a guest on this device carry over to the account.
+      const moved = guest ? game.mergeGuest(guest.id, ctx.user.id) : 0;
+      return { ok: true, moved };
     },
     'POST /api/logout': (ctx) => {
-      game.logout(ctx.token);
+      if (ctx.token) game.logout(ctx.token);
       ctx.setToken(null);
       return { ok: true };
     },
     'GET /api/leagues': ({ user }) => ({ leagues: user ? game.myLeagues(user.id) : [] }),
     'GET /api/leagues/preview': ({ query }) => ({ league: game.leaguePreview(query.get('code')) }),
-    'POST /api/leagues': (ctx) => ({ league: game.createLeague(ensureUser(ctx).id, ctx.body.name) }),
-    'POST /api/leagues/join': (ctx) => ({ league: game.joinLeague(ensureUser(ctx).id, ctx.body.code) }),
+    'POST /api/leagues': (ctx) => {
+      game.checkLeagueName(ctx.body.name);
+      return { league: game.createLeague(ensureUser(ctx).id, ctx.body.name) };
+    },
+    'POST /api/leagues/join': (ctx) => {
+      game.leaguePreview(ctx.body.code); // throws for a bad code before making a guest
+      return { league: game.joinLeague(ensureUser(ctx).id, ctx.body.code) };
+    },
     'POST /api/leagues/leave': (ctx) => {
       game.leaveLeague(requireUser(ctx.user).id, Number(ctx.body.leagueId));
       return { ok: true };
@@ -100,10 +114,19 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
   }
 
   return async (req, res) => {
-    const url = new URL(req.url, 'http://localhost');
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+    } catch {
+      return send(res, 400, { error: 'Bad request' });
+    }
     const handler = routes[`${req.method} ${url.pathname}`];
     if (!handler) {
-      return url.pathname.startsWith('/api/') ? send(res, 404, { error: 'Not found' }) : serveStatic(url, req, res);
+      if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
+      return serveStatic(url, req, res).catch((err) => {
+        console.error(err);
+        if (!res.headersSent) send(res, 500, { error: 'Something went wrong' });
+      });
     }
     try {
       const token = parseCookies(req.headers.cookie).session;
@@ -112,7 +135,7 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
         user: game.userForToken(token),
         body: req.method === 'POST' ? await readJson(req) : {},
         query: url.searchParams,
-        ip: req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress,
+        ip: clientIp(req),
         adminToken: req.headers['x-admin-token'],
         setToken(newToken) {
           ctx.token = newToken;
@@ -157,17 +180,35 @@ function send(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+// The visitor's address. X-Forwarded-For is easy to fake, so it's only used
+// when TRUST_PROXY says how many proxies we run behind (e.g. 1 behind a
+// single load balancer), and then only the entry our own proxy added.
+function clientIp(req) {
+  const hops = Number(process.env.TRUST_PROXY ?? 0);
+  if (hops > 0 && req.headers['x-forwarded-for']) {
+    const chain = req.headers['x-forwarded-for'].split(',').map((s) => s.trim()).filter(Boolean);
+    const ip = chain[chain.length - hops];
+    if (ip) return ip;
+  }
+  return req.socket.remoteAddress;
+}
+
 async function readJson(req) {
   let raw = '';
   for await (const chunk of req) {
     raw += chunk;
     if (raw.length > 10_000) throw new GameError('Something went wrong. Refresh and try again.', 413);
   }
+  let body;
   try {
-    return raw ? JSON.parse(raw) : {};
+    body = raw ? JSON.parse(raw) : {};
   } catch {
     throw new GameError('Something went wrong. Refresh and try again.');
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new GameError('Something went wrong. Refresh and try again.');
+  }
+  return body;
 }
 
 function parseCookies(header = '') {
@@ -185,10 +226,22 @@ function siteOrigin(req) {
 
 // Real files are served as-is; any other path without an extension (like an
 // invite link, /join/ABC123) gets the app, which reads the URL itself.
+// The app's own pages; any other path without a file extension is a 404.
+const APP_PATHS = /^\/(join\/[^/]*\/?)?$/;
+
 async function serveStatic(url, req, res) {
-  let rel = normalize(decodeURIComponent(url.pathname).slice(1));
-  if (rel.startsWith('..')) return send(res, 404, { error: 'Not found' });
-  if (!rel || !extname(rel)) rel = 'index.html';
+  let path;
+  try {
+    path = decodeURIComponent(url.pathname);
+  } catch {
+    return send(res, 400, { error: 'Bad request' });
+  }
+  let rel = normalize(path.slice(1));
+  if (rel.startsWith('..') || rel.includes('\0')) return send(res, 404, { error: 'Not found' });
+  if (!extname(rel)) {
+    if (!APP_PATHS.test(path)) return notFound(res);
+    rel = 'index.html';
+  }
   try {
     let data = await readFile(join(PUBLIC_DIR, rel));
     if (rel === 'index.html') data = data.toString().replaceAll('{{ORIGIN}}', siteOrigin(req));
@@ -198,8 +251,16 @@ async function serveStatic(url, req, res) {
     });
     res.end(data);
   } catch {
-    send(res, 404, { error: 'Not found' });
+    notFound(res);
   }
+}
+
+function notFound(res) {
+  res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(`<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Not found · WeatherOrNot</title><link rel="stylesheet" href="/style.css"></head>
+<body><div class="app doc"><header class="top"><a class="logo" href="/" style="text-decoration:none;color:inherit">Weather<span>Or</span>Not</a></header>
+<main><article class="card"><h1>Nothing here</h1><p>That page has blown away. <a href="/">Back to the game</a>.</p></article></main></div></body></html>`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>WeatherOrNot admin · Reports</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <style>
     body { font: 15px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 760px; padding: 16px; color: #17202c; background: #f4f7fb; }
     @media (prefers-color-scheme: dark) { body { color: #eef2f7; background: #0f141b; } .r { background: #151d2a !important; } }
@@ -22,6 +23,9 @@
   <div id="list">Loading…</div>
   <script>
     const token = () => sessionStorage.getItem('adminToken') ?? (sessionStorage.setItem('adminToken', prompt('Admin token') ?? ''), sessionStorage.getItem('adminToken'));
+    const UNITS = { rain: 'mm', temp: '°C', wind: 'mph' };
+    const day = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+    const when = (t) => new Date(`${t.replace(' ', 'T')}Z`).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
     async function call(path, body) {
       const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'x-admin-token': token(), 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
@@ -34,9 +38,9 @@
       try {
         const { reports } = await call('/api/admin/reports');
         document.getElementById('list').innerHTML = reports.map((r) => `<div class="r" data-id="${r.id}" data-round="${r.roundId}" data-key="${r.key ?? ''}">
-          <strong>${esc(r.place)}, ${esc(r.date)}</strong>: ${esc(r.question ?? 'Something else')}
-          ${r.key ? `<div class="meta">Question number ${esc(r.line)}, recorded ${esc(r.observed)} at ${esc(r.source?.name ?? 'the forecast model')}</div>` : ''}
-          <p>"${esc(r.message)}" <span class="meta">from ${esc(r.user)}, ${esc(r.reportedAt)}</span></p>
+          <strong>${esc(r.place)}, ${esc(day(r.date))}</strong>: ${esc(r.question ?? 'Something else')}
+          ${r.key ? `<div class="meta">Asked ${esc(r.line)} ${UNITS[r.key]} · recorded ${esc(r.observed)} ${UNITS[r.key]} at ${esc(r.source?.name ?? 'the forecast model')}</div>` : ''}
+          <p>"${esc(r.message)}" <span class="meta">from ${esc(r.user)}, ${esc(when(r.reportedAt))}</span></p>
           ${r.key ? '<input class="reason" placeholder="Reason shown to players, e.g. the rain gauge missed 6 hours">' : ''}
           ${r.key ? '<button class="void">Scrap this question</button>' : ''}<button class="dismiss">Dismiss</button>
         </div>`).join('') || '<p>No open reports.</p>';

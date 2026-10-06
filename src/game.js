@@ -35,6 +35,15 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     userByName: db.prepare('SELECT * FROM users WHERE name = ?'),
     userById: db.prepare('SELECT name FROM users WHERE id = ?'),
     insertUser: db.prepare('INSERT INTO users (name, pass_hash, salt) VALUES (?, ?, ?)'),
+    guestOpenRounds: db.prepare(`
+      SELECT DISTINCT p.round_id FROM picks p JOIN rounds r ON r.id = p.round_id
+      WHERE p.user_id = ? AND r.status = 'open'`),
+    hasPicks: db.prepare('SELECT 1 FROM picks WHERE round_id = ? AND user_id = ? LIMIT 1'),
+    movePicks: db.prepare('UPDATE picks SET user_id = ? WHERE round_id = ? AND user_id = ?'),
+    moveBanker: db.prepare('UPDATE bankers SET user_id = ? WHERE round_id = ? AND user_id = ?'),
+    lastPlace: db.prepare(`
+      SELECT pl.* FROM picks p JOIN rounds r ON r.id = p.round_id JOIN places pl ON pl.id = r.place_id
+      WHERE p.user_id = ? ORDER BY r.date DESC, p.rowid DESC LIMIT 1`),
     claimUser: db.prepare('UPDATE users SET name = ?, pass_hash = ?, salt = ? WHERE id = ? AND pass_hash IS NULL'),
     insertSession: db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)'),
     sessionUser: db.prepare(
@@ -159,7 +168,22 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   }
 
   const userForToken = (token) => (token ? publicUser(q.sessionUser.get(token)) ?? null : null);
-  const logout = (token) => q.deleteSession.run(token);
+  const logout = (token) => q.deleteSession.run(String(token));
+
+  // When a guest logs into a saved account, their answers to games still open
+  // carry over, unless the account already answered that game.
+  function mergeGuest(guestId, accountId) {
+    if (guestId === accountId) return 0;
+    return transaction(db, () => {
+      let moved = 0;
+      for (const { round_id: roundId } of q.guestOpenRounds.all(guestId)) {
+        if (q.hasPicks.get(roundId, accountId)) continue;
+        moved += q.movePicks.run(accountId, roundId, guestId).changes;
+        q.moveBanker.run(accountId, roundId, guestId);
+      }
+      return moved;
+    });
+  }
 
   // ---- places ------------------------------------------------------------
 
@@ -187,6 +211,13 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     playable: isPlayable(p), stationKm: nearestStationKm(p),
   });
   const popularPlaces = () => POPULAR.map(publicPlace);
+
+  // A place by id, for share links: { id, name, ... } or a 404.
+  function placeInfo(id) {
+    const place = q.place.get(String(id ?? ''));
+    if (!place) throw new GameError("We don't know that place. Pick your town again?", 404);
+    return publicPlace(place);
+  }
 
   function getPlace(id) {
     const place = q.place.get(String(id ?? ''));
@@ -288,7 +319,10 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     };
   }
 
+  const OOPS = 'Something went wrong. Refresh and try again.';
+
   function openRound(roundId, key) {
+    if (key !== null && typeof key !== 'string') throw new GameError(OOPS);
     const round = q.round.get(roundId);
     if (!round) throw new GameError('Something went wrong. Refresh and try again.', 404);
     const place = getPlace(round.place_id);
@@ -299,8 +333,17 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     return { round, place };
   }
 
-  function makePick(userId, roundId, key, value) {
+  // Checks that don't need a player, so the server can refuse junk before
+  // creating a guest account.
+  function checkPick(roundId, key, value) {
+    if (typeof key !== 'string') throw new GameError(OOPS);
     if (value !== 0 && value !== 1) throw new GameError('Pick yes or no');
+    openRound(roundId, key);
+  }
+  const checkBanker = (roundId, key) => openRound(roundId, key);
+
+  function makePick(userId, roundId, key, value) {
+    checkPick(roundId, key, value);
     const { round, place } = openRound(roundId, key);
     q.upsertPick.run(round.id, userId, key, value);
     return roundView(round, place, userId);
@@ -416,7 +459,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   function voidQuestion(roundId, key, reason) {
     const round = q.round.get(roundId);
     if (!round || round.status !== 'settled') throw new GameError('No settled game with that id', 404);
-    if (!JSON.parse(round.questions).some((x) => x.key === key)) throw new GameError('No such question', 400);
+    if (typeof key !== 'string' || !JSON.parse(round.questions).some((x) => x.key === key)) throw new GameError('No such question', 400);
     reason = String(reason ?? '').trim().slice(0, 200) || 'the station reading looked wrong';
     transaction(db, () => {
       const results = JSON.parse(round.results);
@@ -443,7 +486,8 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       streak = 1;
       while (streak < dates.length && dates[streak] === addDays(dates[0], -streak)) streak++;
     }
-    return { ...q.totals.get(userId), streak, vsForecast: vsForecast(userId) };
+    const last = q.lastPlace.get(userId);
+    return { ...q.totals.get(userId), streak, vsForecast: vsForecast(userId), lastPlace: last ? publicPlace(last) : null };
   }
 
   // Over the last 30 days, on the calls you made: how often you were right,
@@ -476,7 +520,14 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     return { names: rows.filter((r) => r.points === top).map((r) => r.name), points: top };
   }
 
+  function checkLeagueName(name) {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 40) {
+      throw new GameError('Give your league a name (40 characters max).');
+    }
+  }
+
   function createLeague(userId, name) {
+    checkLeagueName(name);
     name = String(name ?? '').trim();
     if (name.length < 1 || name.length > 40) throw new GameError('Give your league a name (40 characters max).');
     return transaction(db, () => {
@@ -529,7 +580,8 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
 
   return {
     createGuest, saveAccount, login, logout, userForToken,
-    searchPlaces, popularPlaces, view, makePick, setBanker, settleRounds, stats,
+    searchPlaces, popularPlaces, placeInfo, view, makePick, setBanker, settleRounds, stats,
+    checkPick, checkBanker, checkLeagueName, validateCredentials, mergeGuest,
     reportProblem, listReports, voidQuestion, dismissReport,
     createLeague, joinLeague, leaveLeague, myLeagues, leaguePreview,
     tick: settleRounds,
