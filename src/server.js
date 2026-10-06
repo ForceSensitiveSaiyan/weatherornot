@@ -1,13 +1,16 @@
 import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { createGame, GameError } from './game.js';
 import { openMeteoProvider, mockProvider } from './weather.js';
 import { openMeteoGeocoder, mockGeocoder } from './places.js';
 import { synopObserver } from './observations.js';
+import { createStats } from './stats.js';
+import { backupDaily } from './backup.js';
+import { localDate } from './time.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const TICK_MS = 10 * 60 * 1000;
@@ -17,10 +20,12 @@ const TYPES = {
   '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 
-export function createApp(game, { limiter = rateLimiter() } = {}) {
+export function createApp(game, { limiter = rateLimiter(), stats = null } = {}) {
   // Routes get { user, body, query, ip, setToken }. Calling ensureUser() makes
   // a guest account on the spot, so nobody has to sign up before playing.
   const routes = {
+    // For the host's health checks.
+    'GET /healthz': () => (stats?.ping(), { ok: true }),
     'GET /api/me': ({ user }) => ({ user, stats: user ? game.stats(user.id) : null }),
     'GET /api/places/popular': () => ({ places: game.popularPlaces() }),
     'GET /api/places/search': async ({ query, ip }) => {
@@ -53,6 +58,13 @@ export function createApp(game, { limiter = rateLimiter() } = {}) {
     'POST /api/admin/void': (ctx) => {
       requireAdmin(ctx);
       game.voidQuestion(Number(ctx.body.roundId), ctx.body.key, ctx.body.reason);
+      return { ok: true };
+    },
+    'GET /api/admin/stats': (ctx) => (requireAdmin(ctx), stats ? stats.summary() : { days: [], totals: {} }),
+    // Anonymous daily counts (visits, shares). No user, cookie or address is kept.
+    'POST /api/hit': (ctx) => {
+      limiter(ctx.ip, 'hit', 300);
+      stats?.count(String(ctx.body.name ?? ''));
       return { ok: true };
     },
     'POST /api/admin/dismiss': (ctx) => {
@@ -271,20 +283,48 @@ function notFound(res) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const mock = process.env.WEATHER_PROVIDER === 'mock';
   const provider = mock ? mockProvider() : openMeteoProvider();
+  const dbPath = process.env.DB_PATH ?? 'weatherornot.db';
+  const db = openDb(dbPath);
+  const stats = createStats(db);
   const game = createGame({
-    db: openDb(process.env.DB_PATH ?? 'weatherornot.db'),
+    db,
     provider,
     geocoder: mock ? mockGeocoder() : openMeteoGeocoder(),
     // Settle on weather station reports unless running on fake weather.
     observer: mock || process.env.OBSERVATIONS === 'model' ? null : synopObserver(),
   });
-  const tick = () => game.tick()
-    .then((n) => n && console.log(`Settled ${n} game(s)`))
-    .catch((err) => console.error('Tick failed:', err.message));
+  // A copy of the database once a day, kept for BACKUP_KEEP days.
+  const backupDir = process.env.BACKUP_DIR ?? join(dirname(dbPath), 'backups');
+  const backup = () => {
+    if (dbPath === ':memory:' || backupDir === 'off') return;
+    try {
+      const file = backupDaily(db, backupDir, localDate('Europe/London'), Number(process.env.BACKUP_KEEP ?? 14));
+      if (file) console.log(`Backed up to ${file}`);
+    } catch (err) {
+      console.error('Backup failed:', err.message);
+    }
+  };
+  const tick = () => {
+    backup();
+    return game.tick()
+      .then((n) => n && console.log(`Settled ${n} game(s)`))
+      .catch((err) => console.error('Tick failed:', err.message));
+  };
   tick();
-  setInterval(tick, TICK_MS);
+  const timer = setInterval(tick, TICK_MS);
   const port = Number(process.env.PORT ?? 3000);
-  createServer(createApp(game)).listen(port, () => {
+  const server = createServer(createApp(game, { stats })).listen(port, () => {
     console.log(`WeatherOrNot running at http://localhost:${port} (weather: ${provider.name})`);
   });
+  // Hosts send SIGTERM before a restart or deploy: finish requests, close the database cleanly.
+  for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.once(signal, () => {
+      clearInterval(timer);
+      server.close(() => {
+        db.close();
+        process.exit(0);
+      });
+      setTimeout(() => process.exit(0), 5000).unref();
+    });
+  }
 }

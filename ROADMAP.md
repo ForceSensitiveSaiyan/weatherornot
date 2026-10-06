@@ -96,9 +96,10 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 
 ## Phase 2: Ready for the friends test
 
-- [ ] Hosting, with `PUBLIC_URL` set and a domain
-- [ ] Database backups
-- [ ] Basic, privacy-friendly analytics: do people come back the next day? Do they share?
+- [x] Ready to host anywhere: a container (`Dockerfile`), a `/healthz` health check, clean restarts on deploys, hosting steps in the README
+- [ ] 🔨 Choose a host and a domain, then deploy with `PUBLIC_URL`, `TRUST_PROXY=1` and `ADMIN_TOKEN` set
+- [x] Database backups: a full copy every day, kept for 14 days (plus the host's volume snapshots, once we have a host)
+- [x] Privacy-friendly stats on the admin page: players each day, new players, how many came back the next day, visits, shares, visits from shared links. Anonymous daily totals only, no cookies; the privacy notice says so
 - [x] Footer with credits, Privacy and Terms pages, "Powered by ai.doo"
 - [x] Privacy and terms name ai.doo as the operator, contact hello@aidoo.biz
 - [ ] Get the privacy notice and terms checked before launch

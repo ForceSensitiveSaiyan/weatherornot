@@ -4,6 +4,8 @@ const SCHEMA_VERSION = 3;
 
 export function openDb(path = ':memory:') {
   const db = new DatabaseSync(path);
+  // Readers don't wait for writers, and a busy moment waits instead of failing.
+  if (path !== ':memory:') db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
   const { user_version: version } = db.prepare('PRAGMA user_version').get();
   const hasTables = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table'").get();
   if (hasTables && version !== SCHEMA_VERSION) {

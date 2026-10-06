@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>WeatherOrNot admin · Reports</title>
+  <title>WeatherOrNot admin</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <style>
     body { font: 15px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 760px; padding: 16px; color: #17202c; background: #f4f7fb; }
@@ -14,10 +14,19 @@
     .meta { color: #6b7686; font-size: .85rem; }
     button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid #888; background: none; color: inherit; cursor: pointer; margin-right: 6px; }
     button.void { background: #c2410c; border-color: #c2410c; color: #fff; }
+    table { border-collapse: collapse; width: 100%; font-size: .9rem; font-variant-numeric: tabular-nums; }
+    th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid #8884; }
+    th:first-child, td:first-child { text-align: left; white-space: nowrap; }
+    th { font-weight: 600; color: #6b7686; }
+    .wrap { overflow-x: auto; }
     input { font: inherit; padding: 6px 8px; width: 100%; box-sizing: border-box; margin: 6px 0; }
   </style>
 </head>
 <body>
+  <h1>How it's going</h1>
+  <p class="meta" id="totals"></p>
+  <div class="wrap"><table id="stats"></table></div>
+  <p class="meta">Played: answered at least one question that day. Came back: also played the day before. Shares: taps on any share button. Opened a share: visits from a shared result or league invite link. Counts only, nothing about who.</p>
   <h1>Player reports</h1>
   <p class="meta">Void a question only when a station reading is clearly wrong (missing hours, an impossible value, or it disagrees badly with nearby stations). Voiding gives everyone who answered 5 pts (10 if doubled) and recalculates scores.</p>
   <div id="list">Loading…</div>
@@ -33,6 +42,18 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       return data;
+    }
+    async function loadStats() {
+      try {
+        const { days, totals } = await call('/api/admin/stats');
+        document.getElementById('totals').textContent = `${n(totals.players, 'player')} so far · ${n(totals.savedAccounts, 'saved account')} · ${n(totals.leagues, 'league')} (${n(totals.leagueMembers, 'member')})`;
+        const n = (x, word) => `${x} ${word}${x === 1 ? '' : 's'}`;
+        const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : '–');
+        document.getElementById('stats').innerHTML = '<tr><th>Day</th><th>Played</th><th>New</th><th>Came back</th><th>Visits</th><th>First visits</th><th>Shares</th><th>Opened a share</th></tr>' +
+          days.map((d) => `<tr><td>${esc(day(d.date))}</td><td>${d.players}</td><td>${d.newPlayers}</td>
+            <td title="${d.cameBack} of ${d.playedDayBefore}">${pct(d.cameBack, d.playedDayBefore)}</td>
+            <td>${d.visits}</td><td>${d.intros}</td><td>${d.shares}</td><td>${d.sharedOpens}</td></tr>`).join('');
+      } catch (err) { document.getElementById('totals').textContent = err.message; }
     }
     async function load() {
       try {
@@ -58,6 +79,7 @@
         load();
       } catch (err) { alert(err.message); }
     });
+    loadStats();
     load();
   </script>
 </body>

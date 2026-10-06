@@ -336,6 +336,15 @@ function renderAccount() {
 
 // ---- sharing -------------------------------------------------------------
 
+// Anonymous daily counts for the owner (visits and shares). No IDs are sent.
+function hit(name) {
+  const body = JSON.stringify({ name });
+  try {
+    if (navigator.sendBeacon?.('/api/hit', body)) return;
+  } catch { /* fall through */ }
+  fetch('/api/hit', { method: 'POST', body, keepalive: true }).catch(() => {});
+}
+
 async function share(text, url) {
   const payload = url ? `${text}\n${url}` : text;
   try {
@@ -451,21 +460,27 @@ document.addEventListener('click', async (e) => {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   const league = e.target.closest('.league');
-  if (action === 'share') share(resultText(), shareLink());
+  if (action === 'share') {
+    hit('share-result');
+    share(resultText(), shareLink());
+  }
   if (action === 'close-coach') {
     $('#coach').hidden = true;
     store.set('coachSeen', '1');
   }
   if (action === 'challenge') {
+    hit('share-challenge');
     share(`I've answered tomorrow's 3 weather questions for ${state.game.place.name}. Reckon you can beat me? ☔🌡️`, location.origin);
   }
   if (action === 'share-table') {
     const l = state.leagues.find((x) => String(x.id) === league.dataset.id);
     const medals = ['🥇', '🥈', '🥉'];
+    hit('share-league');
     const rows = l.standings.map((r, i) => `${medals[i] ?? `${i + 1}.`} ${r.name} ${r.points}`).join('\n');
     share(`${l.name}, this week so far:\n${rows}`, `${location.origin}/join/${l.code}`);
   }
   if (action === 'invite') {
+    hit('share-league');
     share(`Join my WeatherOrNot league "${league.dataset.name}" and guess tomorrow's weather with me ☔`,
       `${location.origin}/join/${league.dataset.code}`);
   }
@@ -538,6 +553,7 @@ document.addEventListener('submit', async (e) => {
       const { league } = await api('/api/leagues', { name: new FormData(e.target).get('name') });
       e.target.reset();
       await loadAll();
+      hit('share-league');
       share(`Join my WeatherOrNot league "${league.name}" and guess tomorrow's weather with me ☔`,
         `${location.origin}/join/${league.code}`);
     } catch (err) {
@@ -579,6 +595,7 @@ async function choosePlace(place) {
 const INTRO_CITIES = ['Manchester', 'Glasgow', 'Douglas', 'Belfast'];
 
 function showIntro({ guess, from }) {
+  hit('intro');
   document.body.classList.add('intro-mode');
   $('#intro').hidden = false;
   const cities = INTRO_CITIES.map((name) => state.popular.find((p) => p.name === name)).filter(Boolean);
@@ -747,8 +764,11 @@ document.addEventListener('keydown', (e) => {
   ({ places: state.popular } = await api('/api/places/popular'));
   const saved = store.get('place');
   const guess = guessPlace();
+  hit('visit');
+  if (location.pathname.startsWith('/join/')) hit('open-invite');
   let from = readShareParams();
   if (from) {
+    hit('open-shared');
     // Use the real name for the place id, so a tampered link can't say one town and load another.
     try {
       from.town = (await api(`/api/places/info?id=${encodeURIComponent(from.place)}`)).place.name;

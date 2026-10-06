@@ -3,3 +3,6 @@ node_modules/
 *.db-journal
 .env
 scripts/sim-data/
+backups/
+*.db-wal
+*.db-shm

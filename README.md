@@ -46,6 +46,31 @@ npm test
 | `ADMIN_TOKEN` | unset | Turns on the admin page (`/admin.html`) for reviewing player reports. Use a long random value. |
 | `OBSERVATIONS` | stations | `model` to settle on the forecast model instead of weather stations |
 | `PUBLIC_URL` | from the request | The site's public address, e.g. `https://weatherornot.app`. Set it in production so link previews (WhatsApp, Facebook, X) get absolute image URLs. |
+| `TRUST_PROXY` | `0` | How many proxies sit in front of the app (usually `1` on a host). Without it, every player looks like the same visitor to the rate limits. Leave at `0` if the app faces the internet directly. |
+| `BACKUP_DIR` | `backups` next to the database | Where the daily database copies go. `off` turns them off. |
+| `BACKUP_KEEP` | `14` | How many daily copies to keep. |
+
+## Hosting
+
+The app is one Node process and one SQLite file, so any host that can run a container **with a persistent disk** works. The `Dockerfile` builds it.
+
+1. Build and deploy the image, with a persistent volume mounted at `/data` (the database and its backups live there; 1 GB is plenty).
+2. Set `PUBLIC_URL` (your domain, with `https://`), `TRUST_PROXY=1`, and a long random `ADMIN_TOKEN`.
+3. Run **one** copy of the app, not several: they would each have their own database.
+4. Point the host's health check at `/healthz`.
+5. Pick a UK or nearby region (London is ideal): it's a UK game, and it settles at UK midnight.
+
+What runs by itself:
+
+- **Settlement** every 10 minutes, once each day's station reports are in.
+- **Backups** once a day: a full copy of the database in `/data/backups`, kept for 14 days. These sit on the same disk, so also turn on the host's own volume snapshots, or copy `/data/backups` somewhere else now and then.
+- **Clean restarts:** on a deploy the app finishes its requests and closes the database before stopping.
+
+To restore a backup, stop the app, copy `weatherornot-YYYY-MM-DD.db` over `/data/weatherornot.db` (and delete any `weatherornot.db-wal` and `-shm` files), then start it again.
+
+## Stats
+
+`/admin.html` (needs `ADMIN_TOKEN`) shows, for each of the last 14 days: how many played, how many were new, what share of the day before's players came back, visits, first visits, shares, and visits from shared links. Most of it comes from the game's own tables. Visits and shares are anonymous daily totals: no IDs, cookies or addresses are stored, so there's no cookie banner to add.
 
 ## Layout
 
@@ -59,6 +84,9 @@ scripts/simulate.mjs  game-design simulator (synthetic or real UK data)
 src/places.js     city search (Open-Meteo geocoding) and the popular-cities list
 src/weather.js    Open-Meteo and mock weather providers
 src/time.js       local dates, local midnight, game numbers
+src/stats.js      the admin page's numbers (players, comebacks, shares)
+src/backup.js     daily database copies
+Dockerfile        container for hosting
 public/           the web app (plain HTML/CSS/JS), icons, share image (og.png)
 public/fonts/     Fredoka, self-hosted (SIL Open Font License, see OFL.txt)
 test/             node:test suites
@@ -67,8 +95,7 @@ test/             node:test suites
 ## Before launching publicly
 
 - **Weather data licence.** Open-Meteo's free API is for non-commercial use only. Anything with ads or revenue needs their paid plan. Their CC BY 4.0 attribution is in the footer.
-- **Results use model data for a grid square,** not a specific official weather station. Fine for a game, but say so, because "it rained at my house!" disputes will happen.
 - **No password reset yet.** Saved accounts are name + password only.
 - **No push notifications yet.** Players have to come back to see results; a morning "You called it ☔ 3/3" notification is the next big retention feature.
-- **A single SQLite file** comfortably handles thousands of players. Back it up.
+- **A single SQLite file** comfortably handles thousands of players. It's backed up daily (see Hosting).
 - **Open-Meteo rate limits.** The free API allows about 10,000 calls a day. The app only fetches a forecast the first time a place is opened each day and once more to settle it, and it retries short outages and rate limits. Results are cached in the database.
