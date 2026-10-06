@@ -6,3 +6,7 @@ scripts
 *.db-*
 backups
 .env
+data
+.github
+deploy
+.env.example

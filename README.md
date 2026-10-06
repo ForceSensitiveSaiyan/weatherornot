@@ -52,21 +52,15 @@ npm test
 
 ## Hosting
 
-The app is one Node process and one SQLite file, so any host that can run a container **with a persistent disk** works. The `Dockerfile` builds it.
-
-1. Build and deploy the image, with a persistent volume mounted at `/data` (the database and its backups live there; 1 GB is plenty).
-2. Set `PUBLIC_URL` (your domain, with `https://`), `TRUST_PROXY=1`, and a long random `ADMIN_TOKEN`.
-3. Run **one** copy of the app, not several: they would each have their own database.
-4. Point the host's health check at `/healthz`.
-5. Pick a UK or nearby region (London is ideal): it's a UK game, and it settles at UK midnight.
+Live at https://playweatherornot.co.uk on the ai.doo Hetzner VPS. It's deployed the same way as the game scoreboards: on every push to `main`, GitHub Actions (`.github/workflows/deploy.yml`) runs the tests, copies the code to `/opt/weatherornot` and runs it with Docker Compose on `127.0.0.1:9890`. The VPS's own Caddy handles HTTPS and forwards to it (`deploy/Caddyfile`). **First-time setup and day-to-day running: `deploy/DEPLOY.md`.**
 
 What runs by itself:
 
 - **Settlement** every 10 minutes, once each day's station reports are in.
-- **Backups** once a day: a full copy of the database in `/data/backups`, kept for 14 days. These sit on the same disk, so also turn on the host's own volume snapshots, or copy `/data/backups` somewhere else now and then.
+- **Backups** once a day: a full copy of the database in `/opt/weatherornot/data/backups`, kept for 14 days. These sit on the same disk, so also use Hetzner's server backups or copy them elsewhere.
 - **Clean restarts:** on a deploy the app finishes its requests and closes the database before stopping.
 
-To restore a backup, stop the app, copy `weatherornot-YYYY-MM-DD.db` over `/data/weatherornot.db` (and delete any `weatherornot.db-wal` and `-shm` files), then start it again.
+Anywhere else works too: it's one container (`Dockerfile`) that needs a persistent disk at `/data`, `PUBLIC_URL`, `TRUST_PROXY` set to the number of proxies in front, and a health check on `/healthz`. Run one copy only; each copy would have its own database.
 
 ## Stats
 
@@ -87,6 +81,9 @@ src/time.js       local dates, local midnight, game numbers
 src/stats.js      the admin page's numbers (players, comebacks, shares)
 src/backup.js     daily database copies
 Dockerfile        container for hosting
+compose.yaml      how the VPS runs it
+deploy/           Caddy config and the step-by-step deploy guide
+.github/workflows/deploy.yml  tests, then deploys to the VPS
 public/           the web app (plain HTML/CSS/JS), icons, share image (og.png)
 public/fonts/     Fredoka, self-hosted (SIL Open Font License, see OFL.txt)
 test/             node:test suites

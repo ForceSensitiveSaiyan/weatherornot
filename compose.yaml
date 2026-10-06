@@ -1,0 +1,17 @@
+# Production on the VPS, the same way as the game scoreboards: GitHub Actions
+# copies the code to the server and runs this. The VPS's own Caddy handles
+# HTTPS and forwards playweatherornot.co.uk to port 9890 (see deploy/Caddyfile).
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    environment:
+      TRUST_PROXY: 1   # Caddy is the one proxy in front
+    ports:
+      - "127.0.0.1:9890:8080"   # only reachable from the server itself, via Caddy
+    volumes:
+      - ${DATA_DIR:-./data}:/data   # the database and its daily backups
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }

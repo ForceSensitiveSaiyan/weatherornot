@@ -1,0 +1,91 @@
+name: Deploy to VPS
+
+# Same setup as the game scoreboards: copy the code to the VPS and rebuild the
+# container. The tests must pass first. Needs these repository secrets:
+# VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_PORT, WEATHERORNOT_ADMIN_TOKEN
+# (and METOFFICE_API_KEY once that account exists).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: VPS
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write settings
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            mkdir -p /opt/weatherornot/data
+            umask 077
+            cat > /opt/weatherornot/.env << 'EOF'
+            PUBLIC_URL=https://playweatherornot.co.uk
+            ADMIN_TOKEN=${{ secrets.WEATHERORNOT_ADMIN_TOKEN }}
+            METOFFICE_API_KEY=${{ secrets.METOFFICE_API_KEY }}
+            EOF
+
+      # The code goes into a fresh release folder each time, so deleted files
+      # don't linger. The database lives outside it, in /opt/weatherornot/data.
+      - name: Upload code
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          source: "src,public,package.json,Dockerfile,.dockerignore,compose.yaml"
+          target: /opt/weatherornot/release
+          rm: true
+
+      - name: Build and restart
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            set -e
+            cd /opt/weatherornot/release
+            export ENV_FILE=/opt/weatherornot/.env DATA_DIR=/opt/weatherornot/data
+            docker compose -p weatherornot up -d --build
+            for i in $(seq 1 30); do
+              if curl -sf http://127.0.0.1:9890/healthz > /dev/null; then echo "Up"; docker image prune -f > /dev/null; exit 0; fi
+              sleep 2
+            done
+            echo "The app didn't come up. Last logs:"
+            docker compose -p weatherornot logs --tail 50 app
+            exit 1
+
+  check-live:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the public site
+        run: |
+          curl -sf https://playweatherornot.co.uk/healthz
+          code=$(curl -s -o /dev/null -w "%{http_code}" https://playweatherornot.co.uk/.env)
+          if [ "$code" = "200" ]; then echo "::error::.env is publicly served"; exit 1; fi

@@ -97,7 +97,10 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 ## Phase 2: Ready for the friends test
 
 - [x] Ready to host anywhere: a container (`Dockerfile`), a `/healthz` health check, clean restarts on deploys, hosting steps in the README
-- [ ] 🔨 Choose a host and a domain, then deploy with `PUBLIC_URL`, `TRUST_PROXY=1` and `ADMIN_TOKEN` set
+- [x] Host and domain chosen: the ai.doo Hetzner VPS, at playweatherornot.co.uk
+- [x] Deploy set up like the game scoreboards: GitHub Actions runs the tests, copies the code to `/opt/weatherornot` and restarts it with Docker Compose; the VPS's Caddy handles HTTPS. Tested end to end locally, including a redeploy keeping the data
+- [ ] 🔨 One-off setup by the owner (`deploy/DEPLOY.md`): DNS records, add the site to Caddy, add the GitHub secrets, first deploy
+- [ ] Turn on Hetzner's server backups (or copy the daily backups off the server)
 - [x] Database backups: a full copy every day, kept for 14 days (plus the host's volume snapshots, once we have a host)
 - [x] Privacy-friendly stats on the admin page: players each day, new players, how many came back the next day, visits, shares, visits from shared links. Anonymous daily totals only, no cookies; the privacy notice says so
 - [x] Footer with credits, Privacy and Terms pages, "Powered by ai.doo"

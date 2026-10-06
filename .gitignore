@@ -6,3 +6,4 @@ scripts/sim-data/
 backups/
 *.db-wal
 *.db-shm
+data/

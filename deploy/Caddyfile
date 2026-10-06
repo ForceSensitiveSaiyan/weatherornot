@@ -1,0 +1,17 @@
+# Add these two blocks to the VPS's Caddyfile (next to aidoo.biz and the
+# scoreboards), then: sudo systemctl reload caddy
+playweatherornot.co.uk {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:9890
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		-Server
+	}
+}
+
+www.playweatherornot.co.uk {
+	redir https://playweatherornot.co.uk{uri} permanent
+}
