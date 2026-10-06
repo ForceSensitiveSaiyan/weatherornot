@@ -6,7 +6,7 @@
   <title>WeatherOrNot · Guess tomorrow's weather</title>
   <meta name="description" content="3 quick questions on tomorrow's weather where you live. Keep your streak going and beat your mates.">
   <meta property="og:title" content="WeatherOrNot">
-  <meta property="og:description" content="3 questions on tomorrow's weather. Beat the forecast, then beat your mates.">
+  <meta property="og:description" content="Reckon you can beat the forecast? 3 quick questions on tomorrow's weather. Free, no signup.">
   <meta property="og:url" content="{{ORIGIN}}/">
   <meta property="og:image" content="{{ORIGIN}}/og.png">
   <meta property="og:image:width" content="1200">
@@ -31,6 +31,56 @@
 
     <div id="invite" class="invite card" hidden></div>
 
+    <!-- First visit: what the game is, with the town picker as the button. -->
+    <div id="intro" class="lay" hidden>
+      <div class="a-intro">
+        <div id="intro-from" class="card invite" hidden></div>
+        <section class="intro-text">
+          <span class="kicker" id="intro-kicker">⛅ A daily weather game for you and your mates</span>
+          <h1>Reckon you can <em>beat the forecast?</em></h1>
+          <p>3 quick questions on tomorrow's weather where you live. The forecast is the starting point. Your gut does the rest.</p>
+        </section>
+      </div>
+      <div class="a-demo demos">
+        <section class="card demo" aria-label="Example: a temperature question">
+          <div class="demo-label">How the questions work</div>
+          <div class="q-head"><span class="q-emoji" aria-hidden="true">🌡️</span><span class="q-title">Will it top 14°C tomorrow?</span></div>
+          <div class="track" aria-hidden="true">
+            <span class="side l">◀ No</span><span class="side r">Yes ▶</span>
+            <div class="mark ln">Asked 14°<i></i></div>
+            <div class="rail"></div>
+            <div class="mark fc"><i></i>Forecast 13.8°</div>
+          </div>
+          <p class="demo-copy">We set the question right by the forecast, so just copying it is a coin flip. Know better? <strong>10 pts.</strong></p>
+        </section>
+        <section class="card demo" aria-label="Example: the rain question">
+          <div class="q-head"><span class="q-emoji" aria-hidden="true">☔️</span><span class="q-title">Will it rain tomorrow?</span></div>
+          <div class="choices demo-choices" aria-hidden="true">
+            <span class="choice yes">Yes <small>· 7 pts</small></span>
+            <span class="choice no">No <small>· 18 pts</small></span>
+          </div>
+          <p class="demo-copy">The forecast says rain's likely (about 7 in 10), so a right Yes scores less. Back the long shot and get it right? <strong>18 pts.</strong></p>
+        </section>
+      </div>
+      <div class="cta a-cta">
+        <button class="btn btn-big" id="intro-guess" hidden></button>
+        <button class="btn btn-big" id="intro-pick">📍 Pick your town and play</button>
+        <div class="cities" id="intro-cities"></div>
+        <p class="fine">Free. No signup. No money. Answers close at midnight.</p>
+      </div>
+      <div class="a-extra" id="intro-extra">
+        <div class="chips">
+          <span class="chip gold">★ Double points on one a day</span>
+          <span class="chip">🎯 You vs the forecast</span>
+          <span class="chip">🏆 Leagues with mates</span>
+        </div>
+        <section class="peek">
+          <h2>What lands in the group chat next morning</h2>
+          <div class="bubble">WeatherOrNot #7 · Douglas<br><span class="g">☔️✅★ 🌡️❌ 💨✅</span><br>2/3 (the forecast got 1/3) · 33 pts · 🔥4</div>
+        </section>
+      </div>
+    </div>
+
     <section class="hero">
       <h1><span id="sky-icon" class="sky-icon" aria-hidden="true">⛅</span> <span id="hero-day">Tomorrow</span></h1>
       <button id="place-button" class="place-button" aria-haspopup="dialog">
@@ -42,6 +92,11 @@
 
     <main id="main" hidden>
       <div id="results-top"></div>
+      <div id="coach" class="coach" hidden>
+        <span class="coach-emoji" aria-hidden="true">👀</span>
+        <span><b>You vs the forecast.</b> Every question starts from what the forecast says. Go with your gut and look out the window.</span>
+        <button class="coach-x" data-action="close-coach" aria-label="Got it, hide this">✕</button>
+      </div>
       <div id="questions" class="questions"></div>
       <div id="done" class="card done" hidden></div>
       <div id="results-bottom"></div>

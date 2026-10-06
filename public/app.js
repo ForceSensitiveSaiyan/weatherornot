@@ -413,7 +413,11 @@ document.addEventListener('click', async (e) => {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   const league = e.target.closest('.league');
-  if (action === 'share') share(resultText(), location.origin);
+  if (action === 'share') share(resultText(), shareLink());
+  if (action === 'close-coach') {
+    $('#coach').hidden = true;
+    store.set('coachSeen', '1');
+  }
   if (action === 'challenge') {
     share(`I've answered tomorrow's 3 weather questions for ${state.game.place.name}. Reckon you can beat me? ☔🌡️`, location.origin);
   }
@@ -491,11 +495,83 @@ document.addEventListener('submit', async (e) => {
 
 // ---- place picker --------------------------------------------------------
 
-function choosePlace(place) {
+async function choosePlace(place) {
   state.placeId = place.id;
   store.set('place', JSON.stringify(place));
-  $('#place-dialog').close();
-  loadGame();
+  if ($('#place-dialog').open) $('#place-dialog').close();
+  const fromIntro = !$('#intro').hidden;
+  hideIntro();
+  // Picking a town from an invite link joins the league too: one tap.
+  if (state.pendingJoin) {
+    const { code, name } = state.pendingJoin;
+    state.pendingJoin = null;
+    try {
+      await api('/api/leagues/join', { code });
+      $('#invite').hidden = true;
+      toast(`You're in ${name}! Now answer your 3 questions`);
+    } catch (err) {
+      toast(err.message);
+    }
+    await loadAll();
+  } else {
+    await loadGame();
+  }
+  if (fromIntro && store.get('coachSeen') !== '1') $('#coach').hidden = false;
+}
+
+// ---- first-visit intro -------------------------------------------------------
+
+const INTRO_CITIES = ['Manchester', 'Glasgow', 'Douglas', 'Belfast'];
+
+function showIntro({ guess, from }) {
+  document.body.classList.add('intro-mode');
+  $('#intro').hidden = false;
+  const cities = INTRO_CITIES.map((name) => state.popular.find((p) => p.name === name)).filter(Boolean);
+  $('#intro-cities').innerHTML = cities.map((p) => `<button class="city" data-intro-place="${esc(p.id)}">${esc(p.name)}</button>`).join('');
+  $('#intro-cities').onclick = (e) => {
+    const id = e.target.closest('[data-intro-place]')?.dataset.introPlace;
+    if (id) choosePlace(cities.find((p) => p.id === id));
+  };
+  // A friend's shared result, or a town we can guess, becomes a one-tap start.
+  const start = from ? { id: from.place, name: from.town } : guess.match;
+  if (start) {
+    $('#intro-guess').hidden = false;
+    $('#intro-guess').textContent = `📍 Play ${start.name}`;
+    $('#intro-guess').onclick = () => choosePlace(start);
+    $('#intro-pick').textContent = 'Pick a different town';
+  }
+  if (from) {
+    $('#intro-from').hidden = false;
+    $('#intro-from').innerHTML = `<div class="big">🎯 ${esc(from.name)} got ${from.got} of ${from.of} in ${esc(from.town)}. Your go?</div>`;
+  }
+  $('#intro-pick').onclick = () => openPicker(guess.hint ?? '');
+}
+
+function hideIntro() {
+  document.body.classList.remove('intro-mode');
+  $('#intro').hidden = true;
+}
+
+// Shared results link back with who played, their score and their town.
+function shareLink() {
+  const { lastRound: r, place } = state.game;
+  const q = new URLSearchParams({
+    from: state.user?.name ?? '', got: r.score.correct, of: r.questions.length, town: place.name, place: place.id,
+  });
+  return `${location.origin}/?${q}`;
+}
+
+function readShareParams() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('from')) return null;
+  history.replaceState(null, '', location.pathname);
+  const got = Number(q.get('got'));
+  const of = Number(q.get('of'));
+  const place = q.get('place') ?? '';
+  const name = (q.get('from') ?? '').slice(0, 20);
+  const town = (q.get('town') ?? '').slice(0, 60);
+  if (!name || !town || !/^gn:\d+$/.test(place) || !(of >= 1 && of <= 3) || !(got >= 0 && got <= of)) return null;
+  return { name, got, of, town, place };
 }
 
 function listPlaces(places, label) {
@@ -559,6 +635,17 @@ async function handleInvite() {
     if (state.leagues.some((l) => l.code === league.code)) return toast(`You're already in ${league.name}`);
     const el = $('#invite');
     el.hidden = false;
+    // New visitors: picking a town on the intro joins the league in the same tap.
+    if (!$('#intro').hidden) {
+      state.pendingJoin = { code, name: league.name };
+      el.innerHTML = `<div class="big">${league.owner ? `${esc(league.owner)} invited you to` : 'You\'re invited to'} ${esc(league.name)} 🏆</div>
+        <p class="muted" style="margin:0">${league.members} ${league.members === 1 ? 'player' : 'players'} guessing tomorrow's weather. Pick your town below and you're in.</p>`;
+      $('#intro-kicker').hidden = true;
+      $('#intro-extra').hidden = true;
+      $('#intro-pick').textContent = $('#intro-guess').hidden ? '📍 Pick your town and join' : 'Pick a different town and join';
+      if (!$('#intro-guess').hidden) $('#intro-guess').textContent += ' and join';
+      return;
+    }
     el.innerHTML = `<div class="big">${league.owner ? `${esc(league.owner)} invited you to` : 'You\'re invited to'} ${esc(league.name)} 🏆</div>
       <p class="muted" style="margin:0">${league.members} ${league.members === 1 ? 'player' : 'players'} guessing tomorrow's weather. Think you can beat them?</p>
       <button class="btn">Join the league</button>`;
@@ -582,10 +669,11 @@ $('#year').textContent = new Date().getFullYear();
   ({ places: state.popular } = await api('/api/places/popular'));
   const saved = store.get('place');
   const guess = guessPlace();
-  const place = saved ? JSON.parse(saved) : guess.match;
+  const from = readShareParams();
+  const place = saved ? JSON.parse(saved) : null;
   if (place) state.placeId = place.id;
   await loadAll();
-  if (!place) openPicker(guess.hint ?? '');
-  handleInvite();
+  if (!place) showIntro({ guess, from });
+  await handleInvite();
   setInterval(renderCountdown, 30_000);
 })();

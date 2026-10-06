@@ -67,13 +67,14 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [ ] Met Office DataHub key: waiting for the owner to register and add `METOFFICE_API_KEY` to the environment
 - [x] Live test of a Douglas game: settled on Ronaldsway's reports in under a second. On 5 Oct the model said 17.4°C, the station measured 18.1°C, against a 17.8°C line, which is exactly the kind of call this fixes
 
-## Phase 1c: First visit explains the game ⏭
+## Phase 1c: First visit explains the game ✅
 
 - [x] Designer proposal reviewed: a first-visit intro ("Reckon you can beat the forecast?") with an example card and the city picker as its button, a one-time "You vs the forecast" coach strip, clearer hints
-- [ ] Build the intro, with a second example card for rain (how the odds work)
-- [ ] City chips: Manchester, Glasgow, Douglas, Belfast (Douglas replaces Cardiff); darker chip fill for contrast
-- [ ] Invite links: picking your town also joins the league, in one tap
-- [ ] Shared results get their own link, so the intro can say "Sam got 2/3 in Manchester. Your go?"
+- [x] Build the intro, with a second example card for rain (how the points work)
+- [x] City chips: Manchester, Glasgow, Douglas, Belfast (Douglas replaces Cardiff), solid white for contrast; a guessed town (an Isle of Man phone) gets a one-tap "Play Douglas"
+- [x] Invite links: picking your town also joins the league, in one tap
+- [x] Shared results link back with the player's name, score and town: "Sam got 2 of 3 in Manchester. Your go?" with a one-tap "Play Manchester"
+- [x] One-time "You vs the forecast" coach strip after the first pick
 - [x] Plain-English pass on the wording: "★ Double it" instead of "banker", "+7 pts" with "Less likely = more points", no "line" or "calls", results say "It did: 18.1°C. You said Yes."
 - [x] Writer's review of the new wording, then fixes ("All done" instead of "Locked in", "★ Double points", "Yes · 7 pts", results like "It hit 18.1°C. You said Yes. ✅ +20 pts", friendlier error messages)
 - [x] You vs the forecast: each result shows "You 2/3 · Forecast 1/3"; the account card shows the last 30 days
