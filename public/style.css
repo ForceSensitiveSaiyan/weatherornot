@@ -214,3 +214,7 @@ dialog::backdrop { background: rgb(10 20 40 / .5); }
 .q.banked { box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 70%, transparent), 0 6px 24px rgb(10 25 50 / .14); }
 .crowd:empty { display: none; }
 .source { margin: 6px 0 0; font-size: .8125rem; color: var(--muted); }
+.hero-station { margin: 4px 0 0; font-size: .8125rem; opacity: .9; }
+.versus { margin: 6px 0 0; font-weight: 600; font-family: var(--font-display); }
+.champion { margin: 0 0 8px; font-size: .9rem; }
+.champion:empty { display: none; }

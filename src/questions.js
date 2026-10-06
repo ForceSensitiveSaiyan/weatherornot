@@ -85,3 +85,7 @@ export function describeQuestion(q) {
 }
 
 export const observeFor = (key, day) => KINDS[key].observe(day);
+
+// What the forecast on its own would have answered: the likelier side for
+// rain, and for the lines whether the raw forecast sits above the line.
+export const forecastCall = (q) => (q.key === 'rain' ? (q.chance >= 0.5 ? 1 : 0) : q.forecast > q.line ? 1 : 0);

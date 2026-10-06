@@ -4,9 +4,8 @@ import { fetchWithRetry } from './weather.js';
 // Open-Meteo's geocoding API returns, so a city searched for by two players
 // always lands on the same daily game and leaderboard.
 //
-// WeatherOrNot is launching in the UK and Crown Dependencies: the popular list
-// is home cities and home search results come first, but anywhere in the
-// world can be played.
+// WeatherOrNot is for the UK, the Isle of Man and the Channel Islands only:
+// that's where we can settle games on official weather station reports.
 export const POPULAR = [
   { id: 'gn:2643743', name: 'London', country: 'England', lat: 51.5085, lon: -0.1257, tz: 'Europe/London' },
   { id: 'gn:2655603', name: 'Birmingham', country: 'England', lat: 52.4814, lon: -1.8998, tz: 'Europe/London' },
@@ -49,18 +48,16 @@ export function openMeteoGeocoder({ fetchImpl = fetch } = {}) {
         const hint = rest.join(' ').trim().toLowerCase();
         if (hint) {
           const all = await lookup(first.trim());
-          const matching = all.filter((r) => [r.admin1, r.country, HOME[r.country_code]].join(' ').toLowerCase().includes(hint));
-          results = matching.length ? matching : all;
+          results = all.filter((r) => [r.admin1, r.country, HOME[r.country_code]].join(' ').toLowerCase().includes(hint));
         }
       }
       return results
-        .filter((r) => r.timezone)
-        .sort((a, b) => isHome(b) - isHome(a)) // stable: keeps relevance order
+        .filter((r) => r.timezone && isHome(r))
         .slice(0, 8)
         .map((r) => ({
           id: `gn:${r.id}`,
           name: r.name,
-          country: isHome(r) ? homeLabel(r) : [r.admin1, r.country].filter(Boolean).join(', '),
+          country: homeLabel(r),
           lat: r.latitude,
           lon: r.longitude,
           tz: r.timezone,

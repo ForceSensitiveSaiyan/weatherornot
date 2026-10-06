@@ -58,15 +58,18 @@ const detailOf = (q) => COPY[q.key]?.detail ?? q.detail;
 // Why the line sits where it does, in plain words.
 function hintFor(q) {
   if (q.key === 'rain') {
-    return `Forecast ${fmt(q.forecast, q.unit)}. Days like that see rain about ${Math.round(q.chance * 100)}% of the time.`;
+    const inTen = Math.round(q.chance * 10);
+    const mood = inTen >= 6 ? "Rain's likely" : inTen <= 3 ? "Rain's unlikely" : 'Could go either way';
+    const odds = inTen < 1 ? 'fewer than 1 in 10 days like this get wet' : `about ${inTen} in 10 days like this get wet`;
+    return `Forecast ${fmt(q.forecast, q.unit)}. ${mood}: ${odds}. Less likely = more points.`;
   }
   const shift = Math.round(Math.abs(q.bias) * 10) / 10;
   const base = `Forecast ${fmt(q.forecast, q.unit)}.`;
-  if (shift < 0.1) return `${base} The line sits right on it.`;
+  if (shift < 0.1) return `${base} The question sits right on it.`;
   const tends = q.key === 'temp'
     ? (q.bias > 0 ? 'Highs tend to come in a little warmer than forecast' : 'Highs tend to come in a little cooler than forecast')
     : (q.bias > 0 ? 'Gusts tend to come in a little stronger than forecast' : 'Gusts tend to come in a little lighter than forecast');
-  return `${base} ${tends}, so the line's ${fmt(shift, q.unit)} ${q.bias > 0 ? 'higher' : 'lower'}.`;
+  return `${base} ${tends}, so we've set the question ${fmt(shift, q.unit)} ${q.bias > 0 ? 'higher' : 'lower'}.`;
 }
 
 function untilText(iso) {
@@ -102,6 +105,13 @@ function render() {
   renderDone();
   renderResults();
   renderBoard($('#leaderboard'), game.leaderboard, 'No scores yet this week. Be the first!');
+  $('#board-title').textContent = `${place.name} this week`;
+  $('#champion').innerHTML = game.champion
+    ? `🏆 Last week's best forecaster: <strong>${game.champion.names.map(esc).join(' and ')}</strong> (${game.champion.points} pts)`
+    : '';
+  $('#hero-station').textContent = game.station
+    ? `Results measured at ${game.station.name} weather station, ${game.station.km} km away`
+    : 'No weather station nearby, so results use the forecast model';
   renderLeagues();
   renderAccount();
 }
@@ -136,12 +146,12 @@ function questionCard(q, round) {
     <div class="q-head"><div class="q-emoji" aria-hidden="true">${q.emoji}</div>
       <div><div class="q-title">${esc(titleOf(q))}</div><div class="q-detail">${esc(detailOf(q))}</div></div></div>
     <div class="choices">
-      <button class="choice yes" data-pick="1" aria-pressed="${q.myPick === 1}" ${locked}>Yes <small>+${q.pays.yes * x}</small></button>
-      <button class="choice no" data-pick="0" aria-pressed="${q.myPick === 0}" ${locked}>No <small>+${q.pays.no * x}</small></button>
+      <button class="choice yes" data-pick="1" aria-pressed="${q.myPick === 1}" ${locked}>Yes <small>+${q.pays.yes * x} pts</small></button>
+      <button class="choice no" data-pick="0" aria-pressed="${q.myPick === 0}" ${locked}>No <small>+${q.pays.no * x} pts</small></button>
     </div>
     <div class="q-foot">
       <p class="hint">${esc(hintFor(q))}</p>
-      <button class="banker" aria-pressed="${banked}" ${locked} title="Your banker counts double. One a day.">★ ${banked ? 'Banker 2×' : 'Banker'}</button>
+      <button class="banker" aria-pressed="${banked}" ${locked} title="Double points on this one. One a day.">★ ${banked ? 'Doubled' : 'Double it'}</button>
     </div>
     ${crowdLine(q)}
   </article>`;
@@ -155,7 +165,7 @@ function renderDone() {
   if (el.hidden) return;
   const banked = round.questions.find((q) => q.key === round.banker);
   el.innerHTML = `<div class="big">Locked in. Now we wait 🍿</div>
-    <p class="muted">${banked ? `Your banker: ${esc(banked.title.replace(/\?$/, ''))}. ` : 'Tip: make one call your ★ banker for double points. '}You can change your mind until midnight in ${esc(place.name)}.</p>
+    <p class="muted">${banked ? `You doubled "${esc(banked.title)}". ` : 'Tip: tap ★ Double it on the one you\'re surest of. '}You can change your answers until midnight in ${esc(place.name)}.</p>
     <div class="btn-row"><button class="btn" data-action="challenge">Challenge a mate</button></div>`;
 }
 
@@ -168,10 +178,21 @@ function sourceLine(source) {
 }
 
 function resultHeadline(r) {
+  if (r.forecast && r.score.correct > r.forecast.correct) return 'You beat the forecast! 🎯';
   const banker = r.questions.find((q) => q.score?.banker);
-  if (banker?.score.correct) return 'Your banker came in! ★';
+  if (banker?.score.correct) return 'Your double came in! ★';
   return ['Rough one. The sky had other ideas.', 'One out of three. Tomorrow\'s another day.',
     'Nice forecasting!', 'Perfect call! ☀️'][r.score.correct] ?? 'Results are in';
+}
+
+// "It did: 18.1°C." in words that fit each question.
+function outcomeText(q) {
+  const v = fmt(q.result.observed, q.unit);
+  if (q.result.answer == null) return `Exactly ${v}, right on the number. Everyone who answered gets 5.`;
+  const yes = q.result.answer === 1;
+  if (q.key === 'rain') return yes ? `It rained: ${v}.` : q.result.observed > 0 ? `Only ${v}, so no.` : 'It stayed dry.';
+  if (q.key === 'wind') return yes ? `They did: ${v}.` : `They didn't: ${v}.`;
+  return yes ? `It did: ${v}.` : `It didn't: ${v}.`;
 }
 
 const markFor = (score) => (!score ? '' : score.correct == null ? '➖' : score.correct ? '✅' : '❌');
@@ -189,21 +210,19 @@ function renderResults() {
       ${played ? `<div class="result-score">${last.score.correct}/${last.questions.length}</div>` : ''}
     </div>
     ${played ? `<p class="muted" style="margin:4px 0 0">${resultHeadline(last)}</p>` : ''}
+    ${played && last.forecast ? `<p class="versus">You ${last.score.correct}/${last.forecast.total} · Forecast ${last.forecast.correct}/${last.forecast.total}</p>` : ''}
     <p class="source">${sourceLine(last.source)}</p>
     <ul class="result-list">${last.questions.map((q) => {
-      const answer = q.result.answer == null ? 'Dead heat' : q.result.answer ? 'Yes' : 'No';
-      const tags = q.score?.banker ? '<span class="bonus">★ banker 2×</span>' : '';
-      const actual = q.result.answer == null
-        ? `${fmt(q.result.observed, q.unit)}, right on the line. Everyone who called it gets 5.`
-        : `Actual: ${fmt(q.result.observed, q.unit)}`;
+      const tags = q.score?.banker ? '<span class="bonus">★ doubled</span>' : '';
+      const you = q.score ? ` You said ${q.score.pick ? 'Yes' : 'No'}.` : '';
       return `<li><span class="r-emoji" aria-hidden="true">${q.emoji}</span>
-        <span><strong>${esc(titleOf(q))}</strong> ${answer}${tags}<br>
-        <span class="r-actual">${actual}</span></span>
+        <span><strong>${esc(titleOf(q))}</strong>${tags}<br>
+        <span class="r-actual">${outcomeText(q)}${you}</span></span>
         <span class="r-points ${q.score?.points ? '' : 'zero'}">${q.score ? `${markFor(q.score)} ${q.score.points}` : ''}</span></li>`;
     }).join('')}</ul>
     ${played
       ? `<div class="btn-row"><span class="result-score">${last.score.points} pts</span><button class="btn" data-action="share">Share result</button></div>`
-      : '<p class="muted">You didn\'t play this one. Make your calls for tomorrow!</p>'}`;
+      : '<p class="muted">You didn\'t play this one. Answer tomorrow\'s questions above!</p>'}`;
 }
 
 // Standard competition ranking: tied scores share a place, shown as "=1".
@@ -229,7 +248,10 @@ function renderLeagues() {
         <span class="league-actions"><button class="btn small" data-action="invite">Invite</button>
           <details class="menu"><summary aria-label="More options">⋯</summary>
             <div class="menu-panel"><button data-action="leave">Leave league</button></div></details></span></div>
+      ${l.champion ? `<p class="champion">🏆 ${esc(l.champion.month)} champion: <strong>${l.champion.names.map(esc).join(' and ')}</strong> (${l.champion.points} pts)</p>` : ''}
+      <p class="small-print muted" style="margin:4px 0">This week</p>
       <ol class="board" id="league-${l.id}"></ol>
+      <button class="linkish small-print" data-action="share-table">Share this week's table</button>
     </div>`).join('');
   for (const l of state.leagues) renderBoard($(`#league-${l.id}`), l.standings, '');
 }
@@ -238,10 +260,14 @@ function renderAccount() {
   const { user, stats } = state;
   const el = $('#account');
   const mode = el.dataset.mode ?? 'closed';
+  const vs = stats?.vsForecast;
+  const versus = vs?.calls >= 3
+    ? `<p class="versus">🎯 You vs the forecast, last 30 days: <strong>${Math.round((100 * vs.you) / vs.calls)}%</strong> right vs ${Math.round((100 * vs.forecast) / vs.calls)}%</p>`
+    : '';
   if (user && !user.guest) {
     el.innerHTML = `<div class="account-row"><div><strong>${esc(user.name)}</strong>
       <p class="muted small-print">${stats.points} pts · ${stats.played} ${stats.played === 1 ? 'game' : 'games'}${stats.streak ? ` · 🔥 ${stats.streak}` : ''}</p></div>
-      <button class="linkish" data-action="logout">Log out</button></div>`;
+      <button class="linkish" data-action="logout">Log out</button></div>${versus}`;
     return;
   }
   const form = (kind) => `<form id="account-form" class="stack" data-mode="${kind}">
@@ -257,6 +283,7 @@ function renderAccount() {
     </div>
     ${mode === 'save' && user ? `<p class="muted small-print" style="margin:8px 0 0">Pick a name and password to keep your streak and play on other devices.</p>${form('save')}` : ''}
     ${mode === 'login' ? form('login') : ''}
+    ${versus}
     <button class="linkish small-print" data-action="toggle-login">${mode === 'login' ? 'Cancel' : 'Already have an account? Log in'}</button>`;
 }
 
@@ -281,7 +308,8 @@ function resultText() {
   const { lastRound: r, place } = state.game;
   const grid = r.questions.map((q) => `${q.emoji}${markFor(q.score) || '⬜'}${q.score?.banker ? '★' : ''}`).join(' ');
   const streak = state.stats?.streak ? ` · 🔥${state.stats.streak}` : '';
-  return `WeatherOrNot #${r.number} · ${place.name}\n${grid}\n${r.score.correct}/${r.questions.length} · ${r.score.points} pts${streak}`;
+  const vs = r.forecast ? ` (forecast ${r.forecast.correct}/${r.forecast.total})` : '';
+  return `WeatherOrNot #${r.number} · ${place.name}\n${grid}\n${r.score.correct}/${r.questions.length}${vs} · ${r.score.points} pts${streak}`;
 }
 
 // ---- actions -------------------------------------------------------------
@@ -364,7 +392,13 @@ document.addEventListener('click', async (e) => {
   const league = e.target.closest('.league');
   if (action === 'share') share(resultText(), location.origin);
   if (action === 'challenge') {
-    share(`I've made my 3 weather calls for tomorrow in ${state.game.place.name}. Think you can do better? ☔🌡️`, location.origin);
+    share(`I've answered tomorrow's 3 weather questions for ${state.game.place.name}. Reckon you can beat me? ☔🌡️`, location.origin);
+  }
+  if (action === 'share-table') {
+    const l = state.leagues.find((x) => String(x.id) === league.dataset.id);
+    const medals = ['🥇', '🥈', '🥉'];
+    const rows = l.standings.map((r, i) => `${medals[i] ?? `${i + 1}.`} ${r.name} ${r.points}`).join('\n');
+    share(`${l.name}, this week so far:\n${rows}`, `${location.origin}/join/${l.code}`);
   }
   if (action === 'invite') {
     share(`Join my WeatherOrNot league "${league.dataset.name}" and call tomorrow's weather with me ☔`,
@@ -431,7 +465,7 @@ function choosePlace(place) {
 function listPlaces(places, label) {
   $('#place-results').innerHTML = (label ? `<li class="label">${label}</li>` : '') + (places.map((p, i) =>
     `<li><button data-index="${i}"><strong>${esc(p.name)}</strong> <small>${esc(p.country)}</small></button></li>`).join('')
-    || '<li class="empty">No places found. Try a nearby town?</li>');
+    || '<li class="empty">No luck. WeatherOrNot covers the UK, the Isle of Man and the Channel Islands. Try a nearby town?</li>');
   $('#place-results').onclick = (e) => {
     const btn = e.target.closest('button[data-index]');
     if (btn) choosePlace(places[Number(btn.dataset.index)]);
@@ -473,7 +507,7 @@ function guessPlace() {
   if (['Europe/Jersey', 'Europe/Guernsey'].includes(tz)) return { hint: '' };
   if (matches.length === 1) return { match: matches[0] };
   if (matches.length > 1) return { hint: '' };
-  return { hint: tz.split('/').pop()?.replace(/_/g, ' ') ?? '' };
+  return { hint: '' }; // outside the British Isles: show the popular list
 }
 
 // ---- invite links --------------------------------------------------------
@@ -493,7 +527,7 @@ async function handleInvite() {
     el.querySelector('button').onclick = async () => {
       await api('/api/leagues/join', { code });
       el.hidden = true;
-      toast(`You're in! Now make your 3 calls`);
+      toast(`You're in! Now answer your 3 questions`);
       await loadAll();
       $('#questions').scrollIntoView({ behavior: 'smooth' });
     };

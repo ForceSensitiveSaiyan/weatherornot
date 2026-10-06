@@ -1,9 +1,10 @@
 import { randomInt } from 'node:crypto';
 import { transaction } from './db.js';
 import { hashPassword, verifyPassword, newToken } from './auth.js';
-import { localDate, addDays, zonedMidnight, gameNumber } from './time.js';
+import { localDate, addDays, zonedMidnight, gameNumber, mondayOf, previousMonth } from './time.js';
+import { stationsNear } from './observations.js';
 import { POPULAR } from './places.js';
-import { questionsFor, resolveQuestion, describeQuestion } from './questions.js';
+import { questionsFor, resolveQuestion, describeQuestion, forecastCall } from './questions.js';
 import { scoreDay } from './scoring.js';
 import { biasFrom } from './bias.js';
 
@@ -76,8 +77,11 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     placeLeaderboard: db.prepare(`
       SELECT u.name, SUM(s.points) AS points, COUNT(*) AS played
       FROM scores s JOIN rounds r ON r.id = s.round_id JOIN users u ON u.id = s.user_id
-      WHERE r.place_id = ? AND r.date >= ?
+      WHERE r.place_id = ? AND r.date BETWEEN ? AND ?
       GROUP BY s.user_id ORDER BY points DESC, played DESC, u.id LIMIT 10`),
+    recentScores: db.prepare(`
+      SELECT s.detail, r.results FROM scores s JOIN rounds r ON r.id = s.round_id
+      WHERE s.user_id = ? AND r.date >= ?`),
     insertLeague: db.prepare('INSERT INTO leagues (name, code, owner_id) VALUES (?, ?, ?)'),
     leagueByCode: db.prepare('SELECT * FROM leagues WHERE code = ?'),
     leagueCodeExists: db.prepare('SELECT 1 FROM leagues WHERE code = ?'),
@@ -87,9 +91,10 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       SELECT l.id, l.name, l.code, l.owner_id FROM leagues l
       JOIN league_members lm ON lm.league_id = l.id WHERE lm.user_id = ? ORDER BY l.name`),
     standings: db.prepare(`
-      SELECT u.name, COALESCE(SUM(s.points), 0) AS points, COUNT(s.round_id) AS played
+      SELECT u.name, COALESCE(SUM(x.points), 0) AS points, COUNT(x.round_id) AS played
       FROM league_members lm JOIN users u ON u.id = lm.user_id
-      LEFT JOIN scores s ON s.user_id = u.id
+      LEFT JOIN (SELECT s.user_id, s.points, s.round_id FROM scores s JOIN rounds r ON r.id = s.round_id
+                 WHERE r.date BETWEEN ? AND ?) x ON x.user_id = u.id
       WHERE lm.league_id = ? GROUP BY u.id ORDER BY points DESC, u.id`),
   };
 
@@ -239,6 +244,10 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       })),
       banker,
       source: results?.source ?? null,
+      forecast: results?.forecast ? {
+        correct: Object.values(results.forecast).filter((x) => x === true).length,
+        total: Object.values(results.forecast).filter((x) => x != null).length,
+      } : null,
       score: score && { correct: score.correct, points: score.points },
     };
   }
@@ -248,11 +257,14 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
     const place = getPlace(placeId);
     const round = await currentRound(place);
     const last = q.lastSettled.get(place.id);
+    const week = thisWeek();
     return {
       place: publicPlace(place),
       round: roundView(round, place, userId),
       lastRound: last ? roundView(last, place, userId) : null,
-      leaderboard: q.placeLeaderboard.all(place.id, addDays(round.date, -7)),
+      station: stationsNear(place, 1)[0] ?? null,
+      leaderboard: q.placeLeaderboard.all(place.id, week.from, week.to),
+      champion: champion(q.placeLeaderboard.all(place.id, addDays(week.from, -7), addDays(week.from, -1))),
       stats: userId ? stats(userId) : null,
     };
   }
@@ -336,7 +348,10 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       }
       if (Object.values(results).some((r) => r == null)) continue;
       transaction(db, () => {
-        if (q.settleRound.run(JSON.stringify({ ...results, source: observed.source }), round.id).changes) {
+        // How the forecast alone would have done, for "you vs the forecast".
+        const forecast = Object.fromEntries(JSON.parse(round.questions).map((x) => [
+          x.key, results[x.key].answer == null ? null : forecastCall(x) === results[x.key].answer]));
+        if (q.settleRound.run(JSON.stringify({ ...results, source: observed.source, forecast }), round.id).changes) {
           scoreRound(round, results);
         }
       });
@@ -356,7 +371,37 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
       streak = 1;
       while (streak < dates.length && dates[streak] === addDays(dates[0], -streak)) streak++;
     }
-    return { ...q.totals.get(userId), streak };
+    return { ...q.totals.get(userId), streak, vsForecast: vsForecast(userId) };
+  }
+
+  // Over the last 30 days, on the calls you made: how often you were right,
+  // and how often the forecast on its own would have been.
+  function vsForecast(userId) {
+    let calls = 0, you = 0, forecast = 0;
+    for (const row of q.recentScores.all(userId, addDays(utcDay(), -30))) {
+      const detail = JSON.parse(row.detail);
+      const fc = JSON.parse(row.results)?.forecast ?? {};
+      for (const [key, d] of Object.entries(detail)) {
+        if (d.correct == null || fc[key] == null) continue;
+        calls++;
+        you += d.correct ? 1 : 0;
+        forecast += fc[key] ? 1 : 0;
+      }
+    }
+    return { calls, you, forecast };
+  }
+
+  // Monday to Sunday, by game date.
+  function thisWeek() {
+    const from = mondayOf(utcDay());
+    return { from, to: addDays(from, 6) };
+  }
+
+  // Top of a table, ties shared; nobody if nobody scored.
+  function champion(rows) {
+    const top = rows[0]?.points;
+    if (!top) return null;
+    return { names: rows.filter((r) => r.points === top).map((r) => r.name), points: top };
   }
 
   function createLeague(userId, name) {
@@ -384,7 +429,7 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   function leaguePreview(code) {
     const league = q.leagueByCode.get(String(code ?? '').trim().toUpperCase());
     if (!league) throw new GameError('No league with that code', 404);
-    const members = q.standings.all(league.id);
+    const members = q.standings.all('0000-00-00', '9999-12-31', league.id);
     return { name: league.name, code: league.code, members: members.length, owner: q.userById.get(league.owner_id)?.name };
   }
 
@@ -393,10 +438,21 @@ export function createGame({ db, provider, geocoder, observer = null, now = () =
   }
 
   function myLeagues(userId) {
+    const week = thisWeek();
     return q.userLeagues.all(userId).map((l) => ({
       id: l.id, name: l.name, code: l.code, isOwner: l.owner_id === userId,
-      standings: q.standings.all(l.id),
+      standings: q.standings.all(week.from, week.to, l.id),
+      champion: monthChampion(l.id),
     }));
+  }
+
+  // Last calendar month's league winner, e.g. { month: 'September', names, points }.
+  function monthChampion(leagueId) {
+    const { from, to } = previousMonth(utcDay());
+    const best = champion(q.standings.all(from, to, leagueId));
+    if (!best) return null;
+    const month = new Date(`${from}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
+    return { month, ...best };
   }
 
   return {

@@ -173,15 +173,15 @@ test('an old points-betting database is refused with a clear message', (t) => {
   assert.throws(() => openDb(path), /older version/);
 });
 
-test('UK search results come before same-named places abroad', async () => {
+test('search only offers places in the UK, Isle of Man and Channel Islands', async () => {
   const fake = { ok: true, json: async () => ({ results: [
     { id: 1, name: 'Newport', country_code: 'US', country: 'United States', admin1: 'Rhode Island', latitude: 41.5, longitude: -71.3, timezone: 'America/New_York' },
     { id: 2, name: 'Newport', country_code: 'GB', country: 'United Kingdom', admin1: 'Wales', latitude: 51.6, longitude: -3, timezone: 'Europe/London' },
+    { id: 3, name: 'Saint Helier', country_code: 'JE', country: 'Jersey', admin1: 'St Helier', latitude: 49.19, longitude: -2.1, timezone: 'Europe/Jersey' },
   ] }) };
   const results = await openMeteoGeocoder({ fetchImpl: async () => fake }).search('Newport');
-  assert.deepEqual(results.map((r) => r.country), ['Wales', 'Rhode Island, United States']);
+  assert.deepEqual(results.map((r) => r.country), ['Wales', 'Jersey']);
 });
-
 test('weather fetches retry dropped connections, and give up with a friendly error', async () => {
   let calls = 0;
   const flaky = async () => {
@@ -220,10 +220,47 @@ test('Isle of Man, Jersey and Guernsey count as home in search, and "town, place
   };
   const geocoder = openMeteoGeocoder({ fetchImpl });
   const plain = await geocoder.search('Douglas');
-  assert.deepEqual(plain.map((r) => r.country), ['Isle of Man', 'Georgia, United States']);
+  assert.deepEqual(plain.map((r) => r.country), ['Isle of Man']);
   const spaced = await geocoder.search('Douglas Isle of Man');
   assert.deepEqual(spaced.map((r) => r.id), ['gn:2']);
   const comma = await geocoder.search('Douglas, Georgia');
-  assert.deepEqual(comma.map((r) => r.id), ['gn:1']);
+  assert.deepEqual(comma, []); // only the British Isles
   assert.deepEqual(calls, ['Douglas', 'Douglas Isle of Man', 'Douglas', 'Douglas, Georgia', 'Douglas']);
+});
+
+test('you vs the forecast, weekly city champion and monthly league champion', async () => {
+  const { game, clock, weather, player } = setup();
+  const ann = player();
+  const ben = player();
+  const league = game.createLeague(ann.id, 'Office');
+  game.joinLeague(ben.id, league.code);
+
+  // Game for Tue 6 Oct. Forecast 3.2 mm (rain likely), high 17.8 vs line 18.2, gusts 25.5 vs line 25.7 mph.
+  const { round } = await game.view(null, LONDON);
+  for (const key of ['rain', 'temp', 'wind']) game.makePick(ann.id, round.id, key, 1);
+  for (const key of ['rain', 'temp', 'wind']) game.makePick(ben.id, round.id, key, 0);
+  clock.now = new Date('2026-10-07T07:00:00Z');
+  weather.set('2026-10-06', { ...mild, tmax: 19, precip: 6, gust: 50 }); // wet, warm, windy: all YES
+  weather.set('2026-10-08', mild);
+  await game.settleRounds();
+
+  const annView = await game.view(ann.id, LONDON);
+  // The forecast alone: rain YES (right), temp NO since 17.8 < 18.2 (wrong), wind NO (wrong).
+  assert.deepEqual(annView.lastRound.forecast, { correct: 1, total: 3 });
+  assert.deepEqual(annView.stats.vsForecast, { calls: 3, you: 3, forecast: 1 });
+  assert.equal(annView.champion, null, 'no finished week yet');
+
+  // The next Monday, last week's top scorer in London is the champion.
+  clock.now = new Date('2026-10-12T09:00:00Z');
+  weather.set('2026-10-13', mild);
+  const nextWeek = await game.view(ann.id, LONDON);
+  assert.deepEqual(nextWeek.champion, { names: [ann.name], points: 7 + 10 + 10 });
+  assert.deepEqual(nextWeek.leaderboard, [], 'new week, new table');
+
+  // In November, Ann is October's league champion; this week's table is empty.
+  clock.now = new Date('2026-11-02T09:00:00Z');
+  const [mine] = game.myLeagues(ann.id);
+  assert.deepEqual(mine.champion, { month: 'October', names: [ann.name], points: 27 });
+  assert.deepEqual(mine.standings.map((s) => s.points), [0, 0]);
+  assert.equal(game.leaguePreview(league.code).members, 2);
 });

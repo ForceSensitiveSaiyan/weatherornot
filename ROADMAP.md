@@ -61,7 +61,8 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [x] Settle on that station's hourly SYNOP reports (high, rainfall, peak gust). Waits until 2 hours after midnight, retries every 30 minutes, and falls back to the model only if no station has a complete day after 36 hours
 - [x] Recalibrate rain odds and line bias against station data (`npm run simulate -- --real --station`): highs at stations run 0.35°C above the forecast, gusts 0.2 mph above, and rain is more likely at low forecast amounts than the model suggested. Calibrated lines now come out YES 53% (temperature) and 52% (wind); copying scores 18.6 a day vs 19.3 for guessing
 - [x] Every result says where it came from ("Measured at Ronaldsway Airport weather station, 12 km away")
-- [ ] Pick a proper data source for production (OGIMET is fine for testing; Met Office DataHub or another licensed feed for launch)
+- [ ] Production data source: Met Office Weather DataHub Land Observations (free tier: 360 calls a day, hourly data, 48 hours of history, ~150 UK stations). Check it has rainfall and gusts and whether it covers the Isle of Man and Channel Islands; keep OGIMET as the backup
+- [ ] Decide the distance limit for playable towns and how players report a bad reading (see "Disputes" below)
 - [x] Live test of a Douglas game: settled on Ronaldsway's reports in under a second. On 5 Oct the model said 17.4°C, the station measured 18.1°C, against a 17.8°C line, which is exactly the kind of call this fixes
 
 ## Phase 1c: First visit explains the game ⏭
@@ -71,7 +72,17 @@ Status key: ✅ done · 🔨 in progress · ⏭ next · 💭 later
 - [ ] City chips: Manchester, Glasgow, Douglas, Belfast (Douglas replaces Cardiff); darker chip fill for contrast
 - [ ] Invite links: picking your town also joins the league, in one tap
 - [ ] Shared results get their own link, so the intro can say "Sam got 2/3 in Manchester. Your go?"
-- [ ] Plain-English pass on the game's wording (see below)
+- [x] Plain-English pass on the wording: "★ Double it" instead of "banker", "+7 pts" with "Less likely = more points", no "line" or "calls", results say "It did: 18.1°C. You said Yes."
+- [ ] Writer's review of the new wording, then fixes
+- [x] You vs the forecast: each result shows "You 2/3 · Forecast 1/3"; the account card shows the last 30 days
+- [x] Titles: last week's best forecaster in each town; each league's monthly champion; league tables are now weekly, with a shareable table
+- [x] Locked to the UK, Isle of Man and Channel Islands (search offers nowhere else); each town shows its weather station before you play
+
+## Disputes (proposal, not built)
+
+- Show the station and distance before anyone plays (done), so the rules are clear up front
+- Only offer towns within a set distance of a reporting station (to decide: 30 km would leave out Bristol, whose nearest full station is 42 km away)
+- "Report a problem" on a result goes to a review queue. If a station reading is clearly wrong, the question is voided for everyone (5 pts each). No per-player disputes: "it rained at my house" can't be checked and would be gamed
 
 ## Phase 2: Ready for the friends test
 

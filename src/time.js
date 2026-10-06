@@ -33,3 +33,16 @@ export function zonedMidnight(date, tz) {
 export function gameNumber(date) {
   return Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse('2026-10-01T00:00:00Z')) / 86_400_000) + 1;
 }
+
+// The Monday on or before a date (weeks run Monday to Sunday).
+export function mondayOf(date) {
+  const dow = new Date(`${date}T00:00:00Z`).getUTCDay(); // 0 = Sunday
+  return addDays(date, -((dow + 6) % 7));
+}
+
+// First and last day of the month before the one a date falls in.
+export function previousMonth(date) {
+  const first = `${date.slice(0, 7)}-01`;
+  const last = addDays(first, -1);
+  return { from: `${last.slice(0, 7)}-01`, to: last };
+}

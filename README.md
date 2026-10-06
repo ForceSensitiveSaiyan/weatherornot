@@ -2,7 +2,7 @@
 
 A free daily game. Make 3 calls on **tomorrow's** weather where you live, keep your streak going and beat your mates. No money involved.
 
-**Launching in the UK.** Temperatures are in °C, wind in mph, dates in UK format, the popular list is 14 UK cities and UK places come first in search. Anywhere in the world can still be played.
+**For the UK, the Isle of Man and the Channel Islands only.** That's where games can be settled on official weather station reports. Temperatures are in °C, wind in mph, dates in UK format.
 
 ## How it plays
 
@@ -25,8 +25,7 @@ A free daily game. Make 3 calls on **tomorrow's** weather where you live, keep y
 
 ## Where the results come from
 
-Each game settles on the nearest official weather station within 50 km (hourly SYNOP reports: the day's high, rainfall and strongest gust), via [OGIMET](https://www.ogimet.com/)'s archive of WMO reports. Station locations come from NOAA's ISD station list (`src/data/uk-stations.json`). If no nearby station has a complete day 36 hours after midnight, the game falls back to the forecast model's own estimate, and the result says so. Places outside the UK and Crown Dependencies have no station list yet, so they settle on the model.
-
+Each game settles on the nearest official weather station within 50 km (hourly SYNOP reports: the day's high, rainfall and strongest gust), via [OGIMET](https://www.ogimet.com/)'s archive of WMO reports. Station locations come from NOAA's ISD station list (`src/data/uk-stations.json`). If no nearby station has a complete day 36 hours after midnight, the game falls back to the forecast model's own estimate, and the result says so. 
 Forecasts (the lines and rain odds) come from Open-Meteo. Set `OBSERVATIONS=model` to settle on the model instead of stations.
 
 ## Running it
