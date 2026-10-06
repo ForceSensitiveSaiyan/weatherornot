@@ -1,4 +1,4 @@
-import { weatherLine, shortDay, scoreLine } from './words.js';
+import { weatherLine, shortDay, vsLine } from './words.js';
 
 const $ = (sel) => document.querySelector(sel);
 const state = { user: null, stats: null, game: null, leagues: [], placeId: null, popular: [], resultsFirst: false, friend: null };
@@ -79,8 +79,9 @@ function captionFor(q) {
   return `Gusts here usually run a bit ${q.bias > 0 ? 'strong' : 'light'}, so it's set ${q.bias > 0 ? 'above' : 'below'} the forecast.`;
 }
 
-// The dial: the number asked in the middle, the forecast as a hollow dot and,
-// once it's settled, what was measured as a solid one.
+// The dial: the number asked in the middle and the forecast as a hollow dot.
+// Once it's settled: the number asked and what was measured, sliding in from
+// where the forecast was.
 function track(q, observed = null, animate = false) {
   if (q.key === 'rain') return '';
   const unitScale = q.key === 'temp' ? 1 : 3;
@@ -92,7 +93,7 @@ function track(q, observed = null, animate = false) {
     <span class="side l">No</span><span class="side r">Yes</span>
     <div class="rail"></div>
     <div class="mark ln" style="left:50%">${settled ? '' : short(q.line, q.unit)}<i></i></div>
-    <div class="mark fc" style="left:${pos(q.forecast)}%"><i></i>Forecast ${short(q.forecast, q.unit)}</div>
+    ${settled ? '' : `<div class="mark fc" style="left:${pos(q.forecast)}%"><i></i>Forecast ${short(q.forecast, q.unit)}</div>`}
     ${settled ? `<div class="mark ob ${animate ? 'go' : ''}" style="--from:${pos(q.forecast)}%;--to:${pos(observed)}%">${short(observed, q.unit)}<i></i></div>` : ''}
   </div>`;
 }
@@ -132,6 +133,7 @@ function render() {
     getComputedStyle(document.documentElement).getPropertyValue('--sky-top').trim();
   $('#sky-icon').textContent = icon;
   $('#place-name').textContent = place.name;
+  $('#hero-day').textContent = weekday(round.date);
   renderCountdown();
   $('#hero-station').textContent = game.station
     ? `Checked at ${game.station.name} weather station, ${game.station.km} km away`
@@ -154,7 +156,7 @@ function renderCountdown() {
     state.lockedShown = true;
     renderQuestions();
   }
-  const day = fmtDay(round.date, { weekday: 'short', day: 'numeric', month: 'short' });
+  const day = `Tomorrow, ${fmtDay(round.date, { day: 'numeric', month: 'short' })}`;
   const dots = round.questions.map((q) => `<i class="${q.myPick != null ? 'on' : ''}"></i>`).join('');
   $('#hero-sub').innerHTML = left === 'locked'
     ? `${day} · answers closed`
@@ -201,12 +203,13 @@ function questionCard(q, round) {
 // After the first answer: one optional box for the name friends will see.
 function renderNameCard() {
   const el = $('#name-card');
-  const show = state.user && (state.renaming || (!state.user.named && (state.askName || store.get('nameSkipped') !== '1')));
+  const allIn = state.game && picksMade() === state.game.round.questions.length;
+  const show = state.user && ((!state.user.named && (state.askName || (allIn && store.get('nameSkipped') !== '1'))));
   el.hidden = !show;
   if (!show || el.querySelector('form')) return;
   el.innerHTML = `<form id="name-form">
       <label for="name-input" class="big">What do your mates call you?</label>
-      <p class="muted small-print">${state.renaming ? 'Shown on tables and when you share.' : `Shown on tables and when you share. You're ${esc(state.user.name)} until then.`}</p>
+      <p class="muted small-print">So the group knows it's you on tables and shared links. You're ${esc(state.user.name)} until then.</p>
       <div class="inline">
         <input id="name-input" name="name" maxlength="20" autocomplete="given-name" placeholder="First name or nickname" required>
         <button class="btn" type="submit">Save</button>
@@ -285,7 +288,7 @@ function readingLine(r) {
   const what = weatherLine(r.questions.map((q) => ({ key: q.key, observed: q.result?.observed })));
   return r.source?.type === 'station'
     ? `${esc(r.source.name)}${r.source.km != null ? `, ${r.source.km} km away` : ''}: ${what}.`
-    : `No full station reading that day, so this is the forecast model's estimate: ${what}.`;
+    : `Forecast model estimate: ${what}. The station's record was incomplete that day.`;
 }
 
 function renderResults() {
@@ -305,14 +308,14 @@ function renderResults() {
       <h2>${weekday(last.date)}'s results</h2>
       ${played ? `<div class="result-score">${last.score.correct}/${scoredCount(last)}</div>` : ''}
     </div>
-    ${played ? `<p class="result-headline">${scoreLine(last.score.correct, scoredCount(last), last.forecast?.correct ?? null)}</p>` : ''}
+    ${played && last.forecast ? `<p class="result-headline">${vsLine(last.score.correct, scoredCount(last), last.forecast.correct)}</p>` : ''}
     <p class="source">${readingLine(last)}</p>
     <ul class="result-list">${last.questions.map((q) => {
-      const tags = q.score?.banker ? '<span class="bonus">★ Doubled</span>' : '';
+      const tags = q.score?.banker ? '<span class="bonus">★ Doubled</span> ' : '';
       const you = q.score && !q.result.voided && q.result.answer != null ? ` You said ${q.score.pick ? 'Yes' : 'No'}.` : '';
       return `<li><span class="r-emoji" aria-hidden="true">${q.emoji}</span>
-        <span><strong>${esc(q.title)}</strong>${tags}<br>
-        <span class="r-actual">${outcomeText(q)}${you}</span></span>
+        <span><strong>${esc(q.title)}</strong>
+        <span class="r-actual">${tags}${outcomeText(q)}${you}</span></span>
         <span class="r-points ${q.score?.points ? '' : 'zero'}">${q.score ? `${markFor(q.score)} ${q.score.points ? `+${q.score.points}` : 0}` : ''}</span>
         ${q.result.voided ? '' : track(q, q.result.observed, animate)}</li>`;
     }).join('')}</ul>
@@ -385,7 +388,13 @@ function renderAccount() {
   const versus = vs?.calls >= 3
     ? `<p class="versus">Last 30 days: you got <strong>${Math.round((100 * vs.you) / vs.calls)}%</strong> right. The forecast got ${Math.round((100 * vs.forecast) / vs.calls)}%.</p>`
     : '';
-  const nameRow = `<div class="account-row"><p>Playing as <strong>${esc(user.name)}</strong></p>
+  const nameRow = mode === 'rename'
+    ? `<form id="rename-form" class="inline">
+        <input name="name" maxlength="20" value="${esc(user.name)}" aria-label="Your name" required>
+        <button class="btn" type="submit">Save</button>
+        <button class="linkish small-print" type="button" data-action="cancel-rename">Cancel</button>
+      </form><p class="error"></p>`
+    : `<div class="account-row"><p>Playing as <strong>${esc(user.name)}</strong></p>
     <button class="linkish small-print" data-action="change-name">Change name</button></div>`;
   if (!user.guest) {
     el.innerHTML = `${versus}${nameRow}
@@ -532,10 +541,10 @@ $('#questions').addEventListener('click', async (e) => {
     card.querySelector('.crowd').outerHTML = crowdLine(round.questions.find((q) => q.key === key));
     renderCountdown();
     renderDone();
+    renderNameCard();
     $('#streak').hidden = !stats.streak;
     $('#streak').textContent = `🔥 ${stats.streak}`;
     if (firstPlay) {
-      renderNameCard();
       renderLeagues();
       renderAccount();
     }
@@ -592,19 +601,19 @@ const actions = {
   retry: () => loadGame(),
   'change-town': () => openPicker(),
   'skip-name'() {
-    if (!state.renaming) store.set('nameSkipped', '1');
-    state.renaming = false;
+    store.set('nameSkipped', '1');
     state.askName = false;
     state.afterName = null;
     $('#name-card').hidden = true;
   },
   'change-name'() {
-    state.renaming = true;
-    $('#name-card').innerHTML = '';
-    renderNameCard();
-    $('#name-input').value = state.user.name;
-    $('#name-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    $('#name-input').focus();
+    $('#account').dataset.mode = 'rename';
+    renderAccount();
+    $('#account input').select();
+  },
+  'cancel-rename'() {
+    $('#account').dataset.mode = 'closed';
+    renderAccount();
   },
   'open-save'() {
     $('#account').dataset.mode = 'save';
@@ -642,7 +651,6 @@ document.addEventListener('submit', async (e) => {
       const { name } = await api('/api/name', { name: data.get('name') });
       state.user = { ...state.user, name, named: true };
       state.askName = false;
-      state.renaming = false;
       $('#name-card').hidden = true;
       $('#name-card').innerHTML = '';
       toast(`Thanks, ${name}.`);
@@ -652,6 +660,18 @@ document.addEventListener('submit', async (e) => {
       next?.();
     } catch (err) {
       form.querySelector('.error').textContent = err.message;
+    }
+  }
+  if (form.id === 'rename-form') {
+    e.preventDefault();
+    try {
+      const { name } = await api('/api/name', { name: data.get('name') });
+      state.user = { ...state.user, name, named: true };
+      $('#account').dataset.mode = 'closed';
+      toast(`Thanks, ${name}.`);
+      loadAll();
+    } catch (err) {
+      $('#account .error').textContent = err.message;
     }
   }
   if (form.id === 'account-form') {
@@ -772,6 +792,7 @@ function showIntro({ guess, friend }) {
     $('#intro-pick').classList.remove('btn', 'btn-big');
   }
   if (friend) {
+    $('.intro-text h1').hidden = true;
     $('#intro-from').hidden = false;
     $('#intro-from').innerHTML = `<div class="big">${friendText(friend)}</div>
       ${friend.settled ? `<p class="muted" style="margin:0">${esc(friend.reading)}</p>` : ''}`;
@@ -790,7 +811,7 @@ function showFriendCard(friend) {
   el.hidden = false;
   const elsewhere = friend.place !== state.placeId;
   el.innerHTML = `<div class="big">${friendText(friend)}</div>
-    ${friend.settled ? `<p class="muted" style="margin:0">${esc(friend.reading)}</p>` : ''}
+    ${friend.settled && elsewhere ? `<p class="muted" style="margin:0">${esc(friend.reading)}</p>` : ''}
     ${elsewhere ? `<button class="btn">Play ${esc(friend.town)}</button>` : ''}`;
   el.querySelector('button')?.addEventListener('click', () => choosePlace({ id: friend.place, name: friend.town }));
 }
@@ -885,6 +906,7 @@ async function handleInvite() {
     if (!$('#intro').hidden) {
       state.pendingJoin = { code, name: league.name };
       el.innerHTML = `<div class="big">${who}</div><p class="muted" style="margin:0">${players} Pick your town and you're in.</p>`;
+      $('.intro-text h1').hidden = true;
       $('#intro-extra').hidden = true;
       const join = (b) => { if (!b.hidden && !b.textContent.endsWith('and join')) b.textContent += ' and join'; };
       join($('#intro-guess'));

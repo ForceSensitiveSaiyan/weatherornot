@@ -29,13 +29,11 @@ export function shortDay(date) {
   return `${part({ weekday: 'short' })} ${d.getUTCDate()} ${part({ month: 'short' })}`;
 }
 
-// How you did against the forecast, in one line.
-export function scoreLine(got, of, forecast) {
-  const you = got === 0 ? 'None right' : got === of ? (of === 3 ? 'All three right' : of === 2 ? 'Both right' : 'Right') : `${cap(NUMBERS[got])} from ${NUMBERS[of]}`;
-  if (forecast == null) return `${you}.`;
-  if (got > forecast) return `${you}. You beat the forecast, which got ${NUMBERS[forecast]}.`;
-  if (got === forecast) return `${you}, same as the forecast.`;
-  return `${you}. The forecast got ${forecast === of ? `all ${NUMBERS[of]}` : NUMBERS[forecast]}.`;
+// How you did against the forecast, for beside the score.
+export function vsLine(got, of, forecast) {
+  if (forecast == null) return '';
+  if (got > forecast) return `You beat the forecast, which got ${NUMBERS[forecast]}.`;
+  if (got === forecast) return 'Same as the forecast.';
+  return `The forecast got ${forecast === of && of > 1 ? `all ${NUMBERS[of]}` : NUMBERS[forecast]}.`;
 }
 
-const cap = (s) => s[0].toUpperCase() + s.slice(1);

@@ -54,7 +54,7 @@
         </section>
         <section class="card demo" aria-label="Example: the rain question">
           <div class="q-head"><span class="q-emoji" aria-hidden="true">☔️</span><span class="q-title">Will it rain tomorrow?</span></div>
-          <p class="demo-odds" aria-hidden="true"><span class="y">Yes 7 pts</span><span class="n">No 18 pts</span></p>
+          <p class="demo-odds" aria-hidden="true">If you're right: <span class="y">Yes, 7 pts</span> or <span class="n">No, 18 pts</span></p>
           <p class="demo-copy">Rain's likely, so a right Yes scores less. Back the long shot and get it right for 18.</p>
         </section>
       </div>
@@ -88,8 +88,8 @@
 
     <main id="main" hidden>
       <div id="questions" class="questions"></div>
-      <div id="name-card" class="card name-card" hidden></div>
       <div id="done" class="card done" hidden></div>
+      <div id="name-card" class="card name-card" hidden></div>
       <div id="results-bottom"></div>
 
       <section class="card">
@@ -145,6 +145,7 @@
       <button class="icon-btn" aria-label="Close">✕</button>
     </form>
     <form id="login-form" class="stack">
+      <p class="muted small-print" style="margin:0">Use the login name you chose under "Play on another phone". It isn't always the name your mates see.</p>
       <input name="name" placeholder="Login name" autocomplete="username" required aria-label="Login name">
       <input name="password" type="password" placeholder="Password" autocomplete="current-password" required aria-label="Password">
       <button class="btn" type="submit">Log in</button>

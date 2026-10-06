@@ -427,3 +427,17 @@ body.results-first .hero { padding-top: 18px; }
   .a-extra { margin-top: 28px; }
   .peek { text-align: left; }
 }
+/* Re-check: the tick stops at the rail, so the forecast label below never runs into it. */
+.track .ln i { height: 18px; }
+.track.settled .ln { top: 18px; }
+.track.settled .ln i { height: 18px; }
+.track.settled { height: 50px; }
+.track.settled .ob { top: 0; }
+.track.settled .ob i { margin-top: 4px; }
+.result-list .r-actual .bonus { margin: 0 4px 0 0; }
+.demo-odds { font: 500 .9375rem system-ui, sans-serif; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+.demo-odds .y, .demo-odds .n { font: 600 1.05rem var(--font-display); }
+#rename-form { align-items: center; }
+#account .error:empty { display: none; }
+.name-card .error:empty { display: none; }
+.name-card .linkish { margin-top: 6px; }

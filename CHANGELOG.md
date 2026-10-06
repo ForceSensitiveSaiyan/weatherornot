@@ -40,6 +40,17 @@ A designer and a tester reviewed it for simplicity, personality and anything tha
   - "Something look wrong?" came back after a reload
   - long names broke mid-word on small phones
   - a failed league join said nothing
+- **After both reviewers re-checked it:**
+  - the dial's labels no longer run into the number asked
+  - the results dial shows just the number asked and the measured reading
+  - results say the score once ("2/3", then "Same as the forecast.")
+  - the header shows the day ("Wednesday")
+  - a friend's or league link replaces the generic headline
+  - the name box comes after "That's your three." instead of between the questions
+  - "Change name" edits in place
+  - the login box explains that the login name isn't always the name your mates see
+  - a friend's weather line isn't repeated for players in the same town
+  - "★ Doubled" sits with the outcome so titles don't wrap
 - **Simulator:** a long-shot punter, weekly tables (`--days=7`) and a points cap option (`--cap`). Capping doubled long shots was tested and not adopted; the numbers are in `ROADMAP.md`.
 
 ### 6 October 2026: ready to host
