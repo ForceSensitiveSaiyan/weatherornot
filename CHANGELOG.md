@@ -4,6 +4,11 @@ What changed, newest first. Not live yet: the first public version will be 1.0.0
 
 ## Unreleased
 
+### 6 October 2026: the morning reveal
+
+- **Your results arrive one question at a time** the first time you see them: each reading slides onto its dial, the tick or cross lands, the score counts up, then the points. After that comes the line on how you did against the forecast, and the Share button gives a nudge.
+- **Tap the card to skip to the end.** The reveal only plays once, and not at all with "reduce motion" turned on.
+
 ### 6 October 2026: morning notifications
 
 - **"You called it. 3/3 in Douglas"** arrives as a notification once your result is in, never before 7.30am. Underneath is what the station measured and how you did against the forecast. Tapping it opens the game with the result at the top.

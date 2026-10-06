@@ -308,6 +308,8 @@ function renderResults() {
   const played = !!last.score;
   const animate = state.resultsFirst && !state.animated;
   state.animated = true;
+  const reveal = animate && played && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  state.stopReveal?.();
   el.innerHTML = `
     <div class="result-head">
       <h2>${weekday(last.date)}'s results</h2>
@@ -315,10 +317,10 @@ function renderResults() {
     </div>
     ${played && last.forecast ? `<p class="result-headline">${vsLine(last.score.correct, scoredCount(last), last.forecast.correct)}</p>` : ''}
     <p class="source">${readingLine(last)}</p>
-    <ul class="result-list">${last.questions.map((q) => {
+    <ul class="result-list">${last.questions.map((q, i) => {
       const tags = q.score?.banker ? '<span class="bonus">★ Doubled</span> ' : '';
       const you = q.score && !q.result.voided && q.result.answer != null ? ` You said ${q.score.pick ? 'Yes' : 'No'}.` : '';
-      return `<li><span class="r-emoji" aria-hidden="true">${q.emoji}</span>
+      return `<li style="--d:${i * REVEAL_STEP}ms"><span class="r-emoji" aria-hidden="true">${q.emoji}</span>
         <span><strong>${esc(q.title)}</strong>
         <span class="r-actual">${tags}${outcomeText(q)}${you}</span></span>
         <span class="r-points ${q.score?.points ? '' : 'zero'}">${q.score ? `${markFor(q.score)} ${q.score.points ? `+${q.score.points}` : 0}` : ''}</span>
@@ -328,6 +330,52 @@ function renderResults() {
       ? `<div class="btn-row"><span class="result-score">${last.score.points} pts</span><button class="btn" data-action="share">Share result</button></div>`
       : '<p class="muted">You didn\'t play this one.</p>'}
     ${reportBlock(last)}`;
+  el.classList.remove('revealing', 'revealed');
+  if (reveal) revealResults(el, last);
+}
+
+// The morning's results, one question at a time: each reading slides onto
+// its dial, the tick or cross lands, the score counts up, then Share.
+// A tap anywhere on the card skips to the end.
+const REVEAL_STEP = 900; // ms between questions
+const REVEAL_LAND = 1300; // ms from a question appearing to its points landing
+function revealResults(el, r) {
+  const of = scoredCount(r);
+  const score = el.querySelector('.result-head .result-score');
+  const total = el.querySelector('.btn-row .result-score');
+  const timers = [];
+  let correct = 0;
+  let frame;
+  const finish = () => {
+    timers.forEach(clearTimeout);
+    cancelAnimationFrame(frame);
+    score.textContent = `${r.score.correct}/${of}`;
+    total.textContent = `${r.score.points} pts`;
+    el.classList.replace('revealing', 'revealed');
+    state.stopReveal();
+  };
+  state.stopReveal = () => {
+    timers.forEach(clearTimeout);
+    cancelAnimationFrame(frame);
+    el.removeEventListener('click', finish);
+  };
+  el.classList.add('revealing');
+  score.textContent = `0/${of}`;
+  total.textContent = '0 pts';
+  r.questions.forEach((q, i) => timers.push(setTimeout(() => {
+    if (q.score?.correct) score.textContent = `${++correct}/${of}`;
+  }, i * REVEAL_STEP + REVEAL_LAND)));
+  timers.push(setTimeout(() => {
+    const start = performance.now();
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / 700);
+      total.textContent = `${Math.round(r.score.points * (1 - (1 - p) ** 3))} pts`;
+      if (p < 1) frame = requestAnimationFrame(tick);
+      else finish();
+    };
+    frame = requestAnimationFrame(tick);
+  }, (r.questions.length - 1) * REVEAL_STEP + REVEAL_LAND + 300));
+  el.addEventListener('click', finish);
 }
 
 // Standard competition ranking: tied scores share a place, shown as "=1".

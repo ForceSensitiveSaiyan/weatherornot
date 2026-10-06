@@ -130,7 +130,7 @@ A designer and a tester reviewed it for simplicity, personality and anything tha
 ## Phase 3: Bring people back
 
 - [x] Morning notification: "You called it. 3/3 in Douglas" (web push, not before 7.30am). Needs the two VAPID secrets to switch on
-- [ ] Animated results reveal with points counting up, then the share sheet
+- [x] Animated results reveal with points counting up, then the Share button (a browser only opens the share sheet from a tap)
 - [ ] "Locked in" panel that stays at the bottom of the screen with Challenge and Share
 - [ ] Password reset (or sign in with a link by email)
 
